@@ -16,50 +16,112 @@ func saveConfigAndFinish(config *config.Config, file string) {
 	}
 }
 func main() {
+	args := os.Args
 	// There is probably a library to manage this better, but I will never finish this. Let me know if you know one :-)
-	if len(os.Args) > 2 && os.Args[1] == "help" {
-		if os.Args[2] == "help" {
+	if len(args) > 1 && args[1] == "help" {
+		if len(args) == 2 {
+			showGeneralHelp()
+		}
+		if len(args) == 3 && args[2] == "config" {
 			showConfigHelp()
 		}
-
+		if len(args) == 3 && args[2] == "key" {
+			showKeyHelp()
+		}
+		if len(args) == 4 && args[2] == "key" && args[3] == "create" {
+			showKeyCreateHelp()
+		}
+		if len(args) == 4 && args[2] == "key" && args[3] == "delete" {
+			showKeyDeleteHelp()
+		}
 	}
-	if len(os.Args) > 1 && os.Args[1] == "config" {
-		if len(os.Args) == 4 && os.Args[2] == "create" {
-			saveConfigAndFinish(config.NewEmpty(), os.Args[3])
+	if len(args) > 1 && args[1] == "config" {
+		if len(args) == 4 && args[2] == "create" {
+			saveConfigAndFinish(config.NewEmpty(), args[3])
 		}
-		if len(os.Args) == 4 && os.Args[2] == "vanilla" {
+		if len(args) == 4 && args[2] == "vanilla" {
+			filename := args[3]
 			cfg := config.NewEmpty()
-			err := cfg.CreateAndAddKey(config.KeyTypeSidhFp751)
-			if err != nil {
-				panic(err)
-			}
-			saveConfigAndFinish(cfg, os.Args[3])
+			_, err := cfg.CreateAndAddKey(config.KeyTypeSidhFp751)
+			panicOnErr(err)
+			saveConfigAndFinish(cfg, filename)
 		}
 
-		if len(os.Args) == 4 && os.Args[2] == "show" {
-			cfg, err := config.LoadFrom(os.Args[3])
-			if err != nil {
-				log.Panic(err)
-			}
-			fmt.Printf("Config file '%s' loaded, it contains:\n", os.Args[3])
+		if len(args) == 4 && args[2] == "show" {
+			filename := args[3]
+			cfg, err := config.LoadFrom(filename)
+			panicOnErr(err)
+			fmt.Printf("Config file '%s' loaded, it contains:\n", args[3])
 			fmt.Println(len(cfg.Keys), "Keys")
 			fmt.Println(len(cfg.Otps), "OTP Datasets")
 			fmt.Println(len(cfg.Uniques), "Unique replay store")
 			os.Exit(0)
 		}
-
 		showConfigHelp()
 	}
 
-	if len(os.Args) > 1 && os.Args[1] == "key" {
-		if len(os.Args) < 3 {
-			showKeyHelp()
+	if len(args) > 1 && args[1] == "key" {
+		if len(args) == 5 && args[2] == "create" {
+			keyTypeSt := args[3]
+			keyType := config.KeyTypeInvalid
+			for k, v := range config.KeyTypeAsString {
+				if keyTypeSt == v {
+					keyType = k
+				}
+			}
+			if keyType == config.KeyTypeInvalid {
+				panic(fmt.Sprintf("I don't know how to generate a key of type: %s", keyTypeSt))
+			}
+			filename := args[4]
+
+			cfg, err := config.LoadFrom(filename)
+			panicOnErr(err)
+			uuid, err := cfg.CreateAndAddKey(keyType)
+			panicOnErr(err)
+			panicOnErr(cfg.SaveTo(filename))
+			fmt.Println("Key generated with uuid", *uuid)
+			os.Exit(0)
 		}
-		if os.Args[2] == "create" {
+
+		if len(args) == 5 && args[2] == "delete" {
+			uuid := args[3]
+			filename := args[4]
+			cfg, err := config.LoadFrom(filename)
+			panicOnErr(err)
+			if cfg.DeleteKeyByUUID(uuid) {
+				panicOnErr(cfg.SaveTo(filename))
+				fmt.Println("Key deleted with UUID", uuid)
+				os.Exit(0)
+			} else {
+				fmt.Println("Could not find key.")
+				os.Exit(-1)
+			}
+		}
+
+		if len(args) == 4 && args[2] == "list" {
+			cfg, err := config.LoadFrom(args[3])
+			panicOnErr(err)
+			for _, key := range cfg.Keys {
+				ktype := "PUBONLY"
+				if key.Pvt != "" {
+					ktype = "PVT/PUB"
+				}
+				fmt.Printf("%s %s:%s\n", ktype, key.Type, key.Uuid)
+			}
+			os.Exit(0)
 
 		}
+
+		showKeyHelp()
 	}
+
 	showGeneralHelp()
+}
+
+func panicOnErr(err error) {
+	if err != nil {
+		panic(err)
+	}
 }
 
 func showGeneralHelp() {
@@ -109,4 +171,18 @@ The commands are:
 Use 
 ks key del <key-id> `)
 	os.Exit(0)
+}
+
+func showKeyCreateHelp() {
+	fmt.Println("Usage: ks key create <type> <config file>")
+	fmt.Print("\nSupported key types: ")
+	for _, v := range config.KeyTypeAsString {
+		fmt.Print(v, " ")
+	}
+	fmt.Println()
+	os.Exit(0)
+}
+
+func showKeyDeleteHelp() {
+	fmt.Println("Usage: ks key delete <key id> <config file>")
 }

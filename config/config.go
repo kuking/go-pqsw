@@ -14,6 +14,7 @@ import (
 type KeyType uint8
 
 const (
+	KeyTypeInvalid   KeyType = 0
 	KeyTypeSidhFp503 KeyType = 1
 	KeyTypeSidhFp751 KeyType = 2
 )
@@ -25,7 +26,7 @@ var KeyTypeAsString = map[KeyType]string{
 
 type Key struct {
 	Type string
-	Uid  string
+	Uuid string
 	Pvt  string
 	Pub  string
 }
@@ -48,7 +49,7 @@ type Config struct {
 	Uniques []Unique
 }
 
-func (c *Config) CreateAndAddKey(keyType KeyType) error {
+func (c *Config) CreateAndAddKey(keyType KeyType) (*string, error) {
 
 	var pvt *sidh.PrivateKey
 	var pub *sidh.PublicKey
@@ -60,25 +61,26 @@ func (c *Config) CreateAndAddKey(keyType KeyType) error {
 		pvt = sidh.NewPrivateKey(sidh.Fp751, sidh.KeyVariantSike)
 		pub = sidh.NewPublicKey(sidh.Fp751, sidh.KeyVariantSike)
 	} else {
-		return errors.New(fmt.Sprintf("I do not know how to create a key type %d.", keyType))
+		return nil, errors.New(fmt.Sprintf("I do not know how to create a key type %d.", keyType))
 	}
 	err := pvt.Generate(rand.Reader)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	pvt.GeneratePublicKey(pub)
 
 	pvtBytes := bytesForSidhPrivateKey(pvt)
 	pubBytes := bytesForSidhPublicKey(pub)
 
+	uuid := base64.StdEncoding.EncodeToString(doSha256(pubBytes))
 	key := Key{
 		Type: KeyTypeAsString[keyType],
-		Uid:  base64.StdEncoding.EncodeToString(doSha256(pubBytes)),
+		Uuid: uuid,
 		Pvt:  base64.StdEncoding.EncodeToString(pvtBytes),
 		Pub:  base64.StdEncoding.EncodeToString(pubBytes),
 	}
 	c.Keys = append(c.Keys, key)
-	return nil
+	return &uuid, nil
 }
 
 func bytesForSidhPrivateKey(pvt *sidh.PrivateKey) []byte {
@@ -122,6 +124,20 @@ func (c *Config) SaveTo(file string) error {
 		return err
 	}
 	return nil
+}
+
+func (c *Config) DeleteKeyByUUID(uuid string) bool {
+	delIdx := -1
+	for idx, key := range c.Keys {
+		if key.Uuid == uuid {
+			delIdx = idx
+		}
+	}
+	if delIdx == -1 {
+		return false
+	}
+	c.Keys = append(c.Keys[:delIdx], c.Keys[delIdx+1:]...)
+	return true
 }
 
 func NewEmpty() *Config {

@@ -2,7 +2,7 @@ package config
 
 import (
 	"bytes"
-	"encoding/binary"
+	"encoding/gob"
 	"io"
 	"io/ioutil"
 	"os"
@@ -21,22 +21,23 @@ func TestLoadSaveRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(tmpFile.Name())
-
-	//XXX: add extra entries in the config file
+	defer removeTempFile(tmpFile)
 
 	original := NewEmpty()
+	_, err = original.CreateAndAddKey(KeyTypeSidhFp503)
+	fatalOnErr(t, err)
+	_, err = original.CreateAndAddKey(KeyTypeSidhFp751)
+	fatalOnErr(t, err)
 	err = original.SaveTo(tmpFile.Name())
-	if err != nil {
-		t.Fatal(err)
-	}
+	fatalOnErr(t, err)
 
 	loaded, err := LoadFrom(tmpFile.Name())
+	fatalOnErr(t, err)
 
 	var originalBytes bytes.Buffer
 	var loadedBytes bytes.Buffer
-	if binary.Write(io.Writer(&originalBytes), binary.LittleEndian, original) != nil ||
-		binary.Write(io.Writer(&loadedBytes), binary.LittleEndian, loaded) != nil {
+	if gob.NewEncoder(io.Writer(&originalBytes)).Encode(original) != nil ||
+		gob.NewEncoder(io.Writer(&loadedBytes)).Encode(loaded) != nil {
 		t.Fatal("Failed to create binary representations")
 	}
 
@@ -44,4 +45,17 @@ func TestLoadSaveRoundTrip(t *testing.T) {
 		t.Fatal("Differences between stored and loaded config")
 	}
 
+}
+
+func fatalOnErr(t *testing.T, err error) {
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func removeTempFile(file *os.File) {
+	err := os.Remove(file.Name())
+	if err != nil {
+		panic(err)
+	}
 }
