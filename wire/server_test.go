@@ -2,8 +2,10 @@ package wire
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"github.com/kuking/go-pqsw/config"
 	"github.com/kuking/go-pqsw/wire/msg"
@@ -38,42 +40,33 @@ func cleanup() {
 func TestKnockKnock_EmptyPayload(t *testing.T) {
 	setup()
 	defer cleanup()
-	knockKnock = msg.KnockKnock{
-		KeyId:           [32]byte{},
-		ProtocolVersion: 0,
-		WireType:        0,
-	}
-	send(t, knockKnock)
+	send(t, msg.KnockKnock{})
 	assertClosedConnection(t)
 }
 
-func TestKnockKnock_ClosesWithoutSending(t *testing.T) {
+func TestKnockKnock_ClientClosesASAP(t *testing.T) {
 	setup()
 	defer cleanup()
-
 	_ = cPipe.Close()
-
 	assertClosedConnection(t)
 }
 
 func TestKnockKnock_ClosesIncompleteSend(t *testing.T) {
 	setup()
 	defer cleanup()
-
 	send(t, []byte{1, 2, 3})
 	_ = cPipe.Close()
-
 	assertClosedConnection(t)
 }
 
-func TestKnockKnock_Spam(t *testing.T) {
+func TestKnockKnock_Noise(t *testing.T) {
 	setup()
 	defer cleanup()
 
-	var err error
-	for i := 0; i < 1000 && err == nil; i++ {
-		err = binary.Write(cPipe, binary.LittleEndian, []byte{1, 2, 3, 4, 5})
+	if sendNoise(1<<20) < 20 {
+		t.Error("This should have at least sent 20 bytes of noise before failing")
 	}
+
 	assertClosedConnection(t)
 }
 
@@ -176,16 +169,15 @@ func TestPuzzleResponse_InvalidResponse(t *testing.T) {
 	assertClosedConnection(t)
 }
 
-func TestPuzzleResponse_SpamResponse(t *testing.T) {
+func TestPuzzleResponse_NoiseResponse(t *testing.T) {
 	setup()
 	defer cleanup()
 
 	givenValidKnockKnock()
 	send(t, knockKnock)
 	recv(t, &puzzleRequest)
-	var err error
-	for i := 0; i < 1000 && err == nil; i++ {
-		err = binary.Write(cPipe, binary.LittleEndian, []byte{1, 2, 3, 4, 5})
+	if sendNoise(1<<20) < 20 {
+		t.Error("This should have at least sent 20 bytes of noise before failing")
 	}
 	assertClosedConnection(t)
 }
@@ -229,6 +221,25 @@ func givenValidKnockKnock() {
 		WireType:        msg.WireType_SimpleAES256,
 	}
 	fmt.Printf("TEST: Happy Valid KnockKnock with Key: %v\n", *keyId)
+}
+
+func sendNoise(minimumAmount int) int {
+	// it sends multiples of 32 bytes, no need to be precise with this
+	var bunch [32]byte
+	var err error
+	count := 0
+	for count < minimumAmount && err == nil {
+		var n int
+		n, err = rand.Read(bunch[:])
+		if n != len(bunch) {
+			err = errors.New("problem creating randomness")
+		}
+		if err == nil {
+			err = binary.Write(cPipe, binary.LittleEndian, bunch)
+		}
+		count += len(bunch)
+	}
+	return count
 }
 
 // ----------- common assertions -------------------------------------------------------------------------------------
