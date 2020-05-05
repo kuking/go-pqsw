@@ -6,6 +6,10 @@ type KnockKnock struct {
 	WireType        uint32
 }
 
+const ProtocolVersion = 1
+const WireType_SimpleAES256 = 1
+const WireType_TripleAES256 = 2
+
 type PuzzleRequest struct {
 	Puzzle uint16
 	Body   [64]byte
@@ -18,3 +22,8 @@ type PuzzleResponse struct {
 
 const PuzzleSHA512LZ = 1
 const SHA512LZParam = 16
+
+type SharedSecretRequest struct {
+	KeyId [256 / 8]byte
+	Bits  uint16
+}
