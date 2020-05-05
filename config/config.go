@@ -5,9 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"github.com/cloudflare/circl/dh/sidh"
+	"github.com/pkg/errors"
 	"io/ioutil"
 )
 
@@ -49,6 +48,16 @@ type Config struct {
 	Uniques []Unique
 }
 
+func (k *Key) GetKeyIdAs32Byte() [32]byte {
+	b, err := base64.StdEncoding.DecodeString(k.Uuid)
+	if err != nil || len(b) != 32 {
+		return [32]byte{}
+	}
+	var res [32]byte
+	copy(res[:], b)
+	return res
+}
+
 func (c *Config) CreateAndAddKey(keyType KeyType) (*string, error) {
 
 	var pvt *sidh.PrivateKey
@@ -61,7 +70,7 @@ func (c *Config) CreateAndAddKey(keyType KeyType) (*string, error) {
 		pvt = sidh.NewPrivateKey(sidh.Fp751, sidh.KeyVariantSike)
 		pub = sidh.NewPublicKey(sidh.Fp751, sidh.KeyVariantSike)
 	} else {
-		return nil, errors.New(fmt.Sprintf("I do not know how to create a key type %d.", keyType))
+		return nil, errors.Errorf("I do not know how to create a key type %d.", keyType)
 	}
 	err := pvt.Generate(rand.Reader)
 	if err != nil {
@@ -72,15 +81,15 @@ func (c *Config) CreateAndAddKey(keyType KeyType) (*string, error) {
 	pvtBytes := bytesForSidhPrivateKey(pvt)
 	pubBytes := bytesForSidhPublicKey(pub)
 
-	uuid := base64.StdEncoding.EncodeToString(doSha256(pubBytes))
+	keyId := base64.StdEncoding.EncodeToString(doSha256(pubBytes))
 	key := Key{
 		Type: KeyTypeAsString[keyType],
-		Uuid: uuid,
+		Uuid: keyId,
 		Pvt:  base64.StdEncoding.EncodeToString(pvtBytes),
 		Pub:  base64.StdEncoding.EncodeToString(pubBytes),
 	}
 	c.Keys = append(c.Keys, key)
-	return &uuid, nil
+	return &keyId, nil
 }
 
 func bytesForSidhPrivateKey(pvt *sidh.PrivateKey) []byte {
@@ -138,6 +147,21 @@ func (c *Config) DeleteKeyByUUID(uuid string) bool {
 	}
 	c.Keys = append(c.Keys[:delIdx], c.Keys[delIdx+1:]...)
 	return true
+}
+
+func (c *Config) ContainsKeyById(keyId string) bool {
+	_, err := c.GetKeyByID(keyId)
+	return err != nil
+}
+
+func (c *Config) GetKeyByID(keyId string) (*Key, error) {
+	// FIXME: needs locking, not lineal search (might not be necessary ...)
+	for _, k := range c.Keys {
+		if keyId == k.Uuid {
+			return &k, nil
+		}
+	}
+	return nil, errors.Errorf("KeyId: %v not found.", keyId)
 }
 
 func NewEmpty() *Config {
