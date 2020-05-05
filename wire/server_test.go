@@ -118,6 +118,17 @@ func TestKnockKnock_UnrecognizedKeyId(t *testing.T) {
 	assertClosedConnection(t)
 }
 
+func TestKnockKnock_GoodButDisconnects(t *testing.T) {
+	setup()
+	defer cleanup()
+
+	givenValidKnockKnock()
+	send(t, knockKnock)
+	_ = cPipe.Close()
+
+	assertClosedConnection(t)
+}
+
 func TestKnockKnock_HappyPath(t *testing.T) {
 	setup()
 	defer cleanup()
@@ -176,6 +187,20 @@ func TestPuzzleResponse_SpamResponse(t *testing.T) {
 	for i := 0; i < 1000 && err == nil; i++ {
 		err = binary.Write(cPipe, binary.LittleEndian, []byte{1, 2, 3, 4, 5})
 	}
+	assertClosedConnection(t)
+}
+
+func TestPuzzleResponse_GoodButDisconnects(t *testing.T) {
+	setup()
+	defer cleanup()
+
+	givenValidKnockKnock()
+	send(t, knockKnock)
+	recv(t, &puzzleRequest)
+	puzzleResponse.Response = sha512lz.Solve(puzzleRequest.Body, int(puzzleRequest.Param))
+	send(t, &puzzleResponse)
+	_ = cPipe.Close()
+
 	assertClosedConnection(t)
 }
 
