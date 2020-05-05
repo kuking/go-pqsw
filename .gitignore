@@ -3,10 +3,10 @@
 *.dll
 *.so
 *.dylib
-
 *.test
-
 *.out
 
 .idea
 
+lala
+bin/*
