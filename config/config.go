@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"github.com/cloudflare/circl/dh/sidh"
+	"github.com/kuking/go-pqsw/wire/msg"
 	"github.com/pkg/errors"
 	"io/ioutil"
 )
@@ -43,9 +44,11 @@ type Unique struct {
 }
 
 type Config struct {
-	Keys    []Key
-	Otps    []Otp
-	Uniques []Unique
+	Keys                      []Key
+	Otps                      []Otp
+	Uniques                   []Unique
+	ClientProvingKeyDerivAlgo uint16 // not wired yet
+	ClientProvingKeyIters     uint32 // not wired yet
 }
 
 func (k *Key) GetKeyIdAs32Byte() [32]byte {
@@ -151,7 +154,7 @@ func (c *Config) DeleteKeyByUUID(uuid string) bool {
 
 func (c *Config) ContainsKeyById(keyId string) bool {
 	_, err := c.GetKeyByID(keyId)
-	return err != nil
+	return err == nil
 }
 
 func (c *Config) GetKeyByID(keyId string) (*Key, error) {
@@ -166,8 +169,10 @@ func (c *Config) GetKeyByID(keyId string) (*Key, error) {
 
 func NewEmpty() *Config {
 	return &Config{
-		Keys:    make([]Key, 0),
-		Otps:    make([]Otp, 0),
-		Uniques: make([]Unique, 0),
+		Keys:                      make([]Key, 0),
+		Otps:                      make([]Otp, 0),
+		Uniques:                   make([]Unique, 0),
+		ClientProvingKeyDerivAlgo: msg.PuzzleSHA512LZ,
+		ClientProvingKeyIters:     msg.SHA512LZParam,
 	}
 }

@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"github.com/google/logger"
 	"github.com/kuking/go-pqsw/config"
+	"github.com/kuking/go-pqsw/wire/msg"
 	"github.com/pkg/errors"
 	"io"
 	"log"
 	"net"
+	"time"
 )
 
 func closeListener(l net.Listener) {
@@ -39,7 +41,7 @@ func Listen(hostPort string, cfg *config.Config) error {
 
 func newClientHandshake(conn net.Conn, cfg *config.Config) {
 
-	knockKnockMsg := KnockKnock{}
+	knockKnockMsg := msg.KnockKnock{}
 	err := binary.Read(conn, binary.LittleEndian, &knockKnockMsg)
 	if terminateHandshakeOnError(conn, err, "Reading client KnockKnock message") {
 		return
@@ -49,15 +51,16 @@ func newClientHandshake(conn net.Conn, cfg *config.Config) {
 		return
 	}
 
-	hashReq, err := sendHashRequest(conn)
-	if terminateHandshakeOnError(conn, err, "sending HashRequest message") {
+	hashReq, err := sendHashRequest(conn, cfg)
+	if terminateHandshakeOnError(conn, err, "sending PuzzleRequest message") {
 		return
 	}
-	fmt.Printf("Server sent HashRequest: %v\n", hashReq)
+	fmt.Printf("WIP: Server sent PuzzleRequest: %v\n", hashReq)
 
+	time.Sleep(1 * time.Second) //Temporary until the whole thing is finished
 }
 
-func sendHashRequest(conn net.Conn) (*HashRequest, error) {
+func sendHashRequest(conn net.Conn, cfg *config.Config) (*msg.PuzzleRequest, error) {
 	randomBytes := make([]byte, 64)
 	n, err := io.ReadFull(rand.Reader, randomBytes)
 	if err != nil {
@@ -68,16 +71,16 @@ func sendHashRequest(conn net.Conn) (*HashRequest, error) {
 	}
 	var payload [64]byte
 	copy(payload[:], randomBytes)
-	req := HashRequest{
-		KeyDerivationAlgo: HashRequestScrypt,
-		Payload:           payload,
-		Iterations:        10000,
+	req := msg.PuzzleRequest{
+		Puzzle: msg.PuzzleSHA512LZ,
+		Body:   payload,
+		Param:  msg.SHA512LZParam,
 	}
 	err = binary.Write(conn, binary.LittleEndian, req)
 	return &req, err
 }
 
-func checkKnockKnockMsg(knock *KnockKnock, cfg *config.Config) error {
+func checkKnockKnockMsg(knock *msg.KnockKnock, cfg *config.Config) error {
 	if knock.ProtocolVersion != 1 {
 		return errors.Errorf("Protocol version not supported: %v", knock.ProtocolVersion)
 	}
@@ -95,7 +98,7 @@ func terminateHandshakeOnError(conn net.Conn, err error, explanation string) boo
 	if err == nil {
 		return false
 	}
-	logger.Infof("Remote: %v terminated with error: %v, while: %v", conn.RemoteAddr(), err, explanation)
+	logger.Infof("Remote: '%v' terminated with error: '%v', while: '%v'", conn.RemoteAddr(), err, explanation)
 	err2 := conn.Close()
 	if err2 != nil {
 		logger.Infof("Could not close connection %v", conn)
