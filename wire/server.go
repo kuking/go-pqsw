@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/binary"
+	"fmt"
 	"github.com/google/logger"
 	"github.com/kuking/go-pqsw/config"
 	"github.com/kuking/go-pqsw/wire/msg"
@@ -41,19 +42,22 @@ func Listen(hostPort string, cfg *config.Config) error {
 func newClientHandshake(conn net.Conn, cfg *config.Config) {
 
 	knockKnock, err := receiveAndVerifyKnockKnock(conn, cfg)
-	if terminateHandshakeOnError(conn, err, "Reading and checking client KnockKnock message") {
+	if terminateHandshakeOnError(conn, err, "reading and checking client KnockKnock message") {
 		return
 	}
 
-	puzzleReq, err := sendPuzzleRequest(conn)
-	if terminateHandshakeOnError(conn, err, "sending PuzzleRequest message") {
+	_, _, err = challengeWithPuzzle(conn)
+	if terminateHandshakeOnError(conn, err, "challenging client with puzzle") {
 		return
 	}
-	_, err = receiveAndVerifyPuzzleResponse(conn, puzzleReq)
-	if terminateHandshakeOnError(conn, err, "receiving PuzzleResponse message and verifying it") {
+
+	cliShare, srvShare, err := negotiateSharedSecrets(conn, cfg, knockKnock.WireType)
+	if terminateHandshakeOnError(conn, err, "challenging client with puzzle") {
 		return
 	}
-	_, err = sendSharedSecretRequest(conn, cfg, knockKnock.WireType)
+
+	fmt.Print(cliShare, srvShare)
+
 	if terminateHandshakeOnError(conn, err, "requesting Shared Secret") {
 		return
 	}
@@ -70,7 +74,7 @@ func receiveAndVerifyKnockKnock(conn net.Conn, cfg *config.Config) (*msg.KnockKn
 	if knockKnock.ProtocolVersion != 1 {
 		return nil, errors.Errorf("Protocol version not supported: %v", knockKnock.ProtocolVersion)
 	}
-	if knockKnock.WireType != msg.WireType_SimpleAES256 && knockKnock.WireType != msg.WireType_TripleAES256 {
+	if knockKnock.WireType != msg.WireTypeSimpleAES256 && knockKnock.WireType != msg.WireTypeTripleAES256 {
 		return nil, errors.Errorf("Wire Type requested not supported: %v", knockKnock.WireType)
 	}
 	keyId := base64.StdEncoding.EncodeToString(knockKnock.KeyId[:])
@@ -80,14 +84,14 @@ func receiveAndVerifyKnockKnock(conn net.Conn, cfg *config.Config) (*msg.KnockKn
 	return &knockKnock, nil
 }
 
-func sendPuzzleRequest(conn net.Conn) (*msg.PuzzleRequest, error) {
+func challengeWithPuzzle(conn net.Conn) (*msg.PuzzleRequest, *msg.PuzzleResponse, error) {
 	var payload [64]byte
 	n, err := io.ReadFull(rand.Reader, payload[:])
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if n != 64 {
-		return nil, errors.New("Could not get enough randomness")
+		return nil, nil, errors.New("Could not get enough randomness")
 	}
 	req := msg.PuzzleRequest{
 		Puzzle: msg.PuzzleSHA512LZ,
@@ -95,39 +99,62 @@ func sendPuzzleRequest(conn net.Conn) (*msg.PuzzleRequest, error) {
 		Param:  msg.SHA512LZParam,
 	}
 	err = binary.Write(conn, binary.LittleEndian, req)
-	return &req, err
-}
 
-func receiveAndVerifyPuzzleResponse(conn net.Conn, req *msg.PuzzleRequest) (*msg.PuzzleResponse, error) {
 	res := msg.PuzzleResponse{}
-	err := binary.Read(conn, binary.LittleEndian, &res)
+	err = binary.Read(conn, binary.LittleEndian, &res)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if !sha512lz.Verify(req.Body, res.Response, int(req.Param)) {
-		return &res, errors.New("Client did not pass Puzzle challenge.")
+		return &req, &res, errors.New("Client did not pass Puzzle challenge.")
 	}
-	return &res, nil
+	return &req, &res, nil
 }
 
-func sendSharedSecretRequest(conn net.Conn, cfg *config.Config, wireType uint32) (*msg.SharedSecretRequest, error) {
+func negotiateSharedSecrets(conn net.Conn, cfg *config.Config, wireType uint32) (clientShare *msg.SharedSecretResponse, serverShare *msg.SharedSecretRequest, err error) {
+
 	//FIXME: TODO: SERVER IS USING THE FIRST KEY AVAILABLE
+	serverKey := cfg.Keys[0]
+
 	shrSecretReq := msg.SharedSecretRequest{
-		KeyId: cfg.Keys[0].GetKeyIdAs32Byte(),
+		KeyId: serverKey.GetKeyIdAs32Byte(),
 	}
-	if wireType == msg.WireType_SimpleAES256 {
+	if wireType == msg.WireTypeSimpleAES256 {
 		shrSecretReq.Bits = 128
-	} else if wireType == msg.WireType_TripleAES256 {
+	} else if wireType == msg.WireTypeTripleAES256 {
 		shrSecretReq.Bits = 256 * 3 / 2
 	} else {
 		panic("I don't know how many bits I need for that WireType key.")
 	}
-
-	err := binary.Write(conn, binary.LittleEndian, shrSecretReq)
+	err = binary.Write(conn, binary.LittleEndian, shrSecretReq)
 	if err != nil {
-		return nil, err
+		return clientShare, serverShare, err
 	}
-	return &shrSecretReq, nil
+	clientShare, err = readSharedSecret(conn)
+	if err != nil {
+		return clientShare, serverShare, err
+	}
+
+	return clientShare, serverShare, err
+}
+
+func readSharedSecret(conn net.Conn) (res *msg.SharedSecretResponse, err error) {
+	bundle := msg.SharedSecretBundleDescriptionResponse{}
+	err = binary.Read(conn, binary.LittleEndian, &bundle)
+	if err != nil {
+		return res, err
+	}
+	res = &msg.SharedSecretResponse{
+		Shared: make([][]byte, bundle.SecretsCount),
+	}
+	for count := 0; count < int(bundle.SecretsCount); count++ {
+		res.Shared[count] = make([]byte, bundle.SecretSize)
+		err = binary.Read(conn, binary.LittleEndian, &res.Shared[count])
+		if err != nil {
+			return res, err
+		}
+	}
+	return res, err
 }
 
 func terminateHandshakeOnError(conn net.Conn, err error, explanation string) bool {

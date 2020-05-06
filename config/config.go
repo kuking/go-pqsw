@@ -1,28 +1,14 @@
 package config
 
 import (
-	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"github.com/cloudflare/circl/dh/sidh"
+	"github.com/kuking/go-pqsw/cryptoutil"
 	"github.com/kuking/go-pqsw/wire/msg"
 	"github.com/pkg/errors"
 	"io/ioutil"
 )
-
-type KeyType uint8
-
-const (
-	KeyTypeInvalid   KeyType = 0
-	KeyTypeSidhFp503 KeyType = 1
-	KeyTypeSidhFp751 KeyType = 2
-)
-
-var KeyTypeAsString = map[KeyType]string{
-	KeyTypeSidhFp503: "SIDH_FP503",
-	KeyTypeSidhFp751: "SIDH_FP751",
-}
 
 type Key struct {
 	Type string
@@ -61,56 +47,24 @@ func (k *Key) GetKeyIdAs32Byte() [32]byte {
 	return res
 }
 
-func (c *Config) CreateAndAddKey(keyType KeyType) (*string, error) {
+func (c *Config) CreateAndAddKey(keyType cryptoutil.KeyType) (*string, error) {
 
 	var pvt *sidh.PrivateKey
 	var pub *sidh.PublicKey
-
-	if keyType == KeyTypeSidhFp503 {
-		pvt = sidh.NewPrivateKey(sidh.Fp503, sidh.KeyVariantSike)
-		pub = sidh.NewPublicKey(sidh.Fp503, sidh.KeyVariantSike)
-	} else if keyType == KeyTypeSidhFp751 {
-		pvt = sidh.NewPrivateKey(sidh.Fp751, sidh.KeyVariantSike)
-		pub = sidh.NewPublicKey(sidh.Fp751, sidh.KeyVariantSike)
-	} else {
-		return nil, errors.Errorf("I do not know how to create a key type %d.", keyType)
-	}
-	err := pvt.Generate(rand.Reader)
+	pvt, pub, err := cryptoutil.SidhNewPair(keyType)
 	if err != nil {
 		return nil, err
 	}
-	pvt.GeneratePublicKey(pub)
 
-	pvtBytes := bytesForSidhPrivateKey(pvt)
-	pubBytes := bytesForSidhPublicKey(pub)
-
-	keyId := base64.StdEncoding.EncodeToString(doSha256(pubBytes))
+	keyId := cryptoutil.SidhKeyId(pub)
 	key := Key{
-		Type: KeyTypeAsString[keyType],
+		Type: cryptoutil.KeyTypeAsString[keyType],
 		Uuid: keyId,
-		Pvt:  base64.StdEncoding.EncodeToString(pvtBytes),
-		Pub:  base64.StdEncoding.EncodeToString(pubBytes),
+		Pvt:  cryptoutil.SidhPrivateKeyAsString(pvt),
+		Pub:  cryptoutil.SidhPublicKeyAsString(pub),
 	}
 	c.Keys = append(c.Keys, key)
 	return &keyId, nil
-}
-
-func bytesForSidhPrivateKey(pvt *sidh.PrivateKey) []byte {
-	b := make([]byte, pvt.Size())
-	pvt.Export(b)
-	return b
-}
-
-func bytesForSidhPublicKey(pvt *sidh.PublicKey) []byte {
-	b := make([]byte, pvt.Size())
-	pvt.Export(b)
-	return b
-}
-
-func doSha256(b []byte) []byte {
-	h := sha256.New()
-	h.Write(b)
-	return h.Sum(nil)
 }
 
 func LoadFrom(file string) (*Config, error) {

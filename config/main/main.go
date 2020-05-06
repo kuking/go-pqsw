@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/kuking/go-pqsw/config"
+	"github.com/kuking/go-pqsw/cryptoutil"
 	"log"
 	"os"
 )
@@ -42,7 +43,7 @@ func main() {
 		if len(args) == 4 && args[2] == "vanilla" {
 			filename := args[3]
 			cfg := config.NewEmpty()
-			_, err := cfg.CreateAndAddKey(config.KeyTypeSidhFp751)
+			_, err := cfg.CreateAndAddKey(cryptoutil.KeyTypeSidhFp751)
 			panicOnErr(err)
 			saveConfigAndFinish(cfg, filename)
 		}
@@ -63,13 +64,13 @@ func main() {
 	if len(args) > 1 && args[1] == "key" {
 		if len(args) == 5 && args[2] == "create" {
 			keyTypeSt := args[3]
-			keyType := config.KeyTypeInvalid
-			for k, v := range config.KeyTypeAsString {
+			keyType := cryptoutil.KeyTypeInvalid
+			for k, v := range cryptoutil.KeyTypeAsString {
 				if keyTypeSt == v {
 					keyType = k
 				}
 			}
-			if keyType == config.KeyTypeInvalid {
+			if keyType == cryptoutil.KeyTypeInvalid {
 				panic(fmt.Sprintf("I don't know how to generate a key of type: %s", keyTypeSt))
 			}
 			filename := args[4]
@@ -176,7 +177,7 @@ ks key del <key-id> `)
 func showKeyCreateHelp() {
 	fmt.Println("Usage: ks key create <type> <config file>")
 	fmt.Print("\nSupported key types: ")
-	for _, v := range config.KeyTypeAsString {
+	for _, v := range cryptoutil.KeyTypeAsString {
 		fmt.Print(v, " ")
 	}
 	fmt.Println()

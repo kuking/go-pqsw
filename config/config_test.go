@@ -3,6 +3,7 @@ package config
 import (
 	"bytes"
 	"encoding/gob"
+	"github.com/kuking/go-pqsw/cryptoutil"
 	"io"
 	"io/ioutil"
 	"os"
@@ -24,9 +25,9 @@ func TestLoadSaveRoundTrip(t *testing.T) {
 	defer removeTempFile(tmpFile)
 
 	original := NewEmpty()
-	_, err = original.CreateAndAddKey(KeyTypeSidhFp503)
+	_, err = original.CreateAndAddKey(cryptoutil.KeyTypeSidhFp503)
 	fatalOnErr(t, err)
-	_, err = original.CreateAndAddKey(KeyTypeSidhFp751)
+	_, err = original.CreateAndAddKey(cryptoutil.KeyTypeSidhFp751)
 	fatalOnErr(t, err)
 	err = original.SaveTo(tmpFile.Name())
 	fatalOnErr(t, err)

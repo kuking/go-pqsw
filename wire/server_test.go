@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/kuking/go-pqsw/config"
+	"github.com/kuking/go-pqsw/cryptoutil"
 	"github.com/kuking/go-pqsw/wire/msg"
 	"github.com/kuking/go-pqsw/wire/sha512lz"
 	"io"
@@ -95,7 +96,7 @@ func TestKnockKnock_WireType_TripleAES256(t *testing.T) {
 	defer cleanup()
 
 	givenValidKnockKnock()
-	knockKnock.WireType = msg.WireType_TripleAES256
+	knockKnock.WireType = msg.WireTypeTripleAES256
 	send(t, knockKnock)
 	recv(t, &puzzleRequest)
 	assertConnectionStillOpen(t)
@@ -212,13 +213,13 @@ func TestPuzzle_HappyPath(t *testing.T) {
 }
 
 func givenValidKnockKnock() {
-	keyId, _ := cfg.CreateAndAddKey(config.KeyTypeSidhFp503) // first key, let's assume it is the server one
-	keyId, _ = cfg.CreateAndAddKey(config.KeyTypeSidhFp503)  // second one, the client
+	keyId, _ := cfg.CreateAndAddKey(cryptoutil.KeyTypeSidhFp503) // first key, let's assume it is the server one
+	keyId, _ = cfg.CreateAndAddKey(cryptoutil.KeyTypeSidhFp503)  // second one, the client
 	key, _ := cfg.GetKeyByID(*keyId)
 	knockKnock = msg.KnockKnock{
 		KeyId:           key.GetKeyIdAs32Byte(),
 		ProtocolVersion: msg.ProtocolVersion,
-		WireType:        msg.WireType_SimpleAES256,
+		WireType:        msg.WireTypeSimpleAES256,
 	}
 	fmt.Printf("TEST: Happy Valid KnockKnock with Key: %v\n", *keyId)
 }

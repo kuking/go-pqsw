@@ -7,8 +7,8 @@ type KnockKnock struct {
 }
 
 const ProtocolVersion = 1
-const WireType_SimpleAES256 = 1
-const WireType_TripleAES256 = 2
+const WireTypeSimpleAES256 = 1
+const WireTypeTripleAES256 = 2
 
 type PuzzleRequest struct {
 	Puzzle uint16
@@ -26,4 +26,14 @@ const SHA512LZParam = 16
 type SharedSecretRequest struct {
 	KeyId [256 / 8]byte
 	Bits  uint16
+}
+
+// Message used in the wire, describes how many 'SecretsCount' of size 'SecretSize' to read.
+type SharedSecretBundleDescriptionResponse struct {
+	SecretsCount uint8
+	SecretSize   uint16
+}
+
+type SharedSecretResponse struct {
+	Shared [][]byte
 }
