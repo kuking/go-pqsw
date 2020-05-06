@@ -5,12 +5,13 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"fmt"
+	"github.com/cloudflare/circl/dh/sidh"
 	"github.com/google/logger"
 	"github.com/kuking/go-pqsw/config"
+	"github.com/kuking/go-pqsw/cryptoutil"
 	"github.com/kuking/go-pqsw/wire/msg"
 	"github.com/kuking/go-pqsw/wire/sha512lz"
 	"github.com/pkg/errors"
-	"io"
 	"log"
 	"net"
 )
@@ -41,8 +42,8 @@ func Listen(hostPort string, cfg *config.Config) error {
 
 func newClientHandshake(conn net.Conn, cfg *config.Config) {
 
-	knockKnock, err := receiveAndVerifyKnockKnock(conn, cfg)
-	if terminateHandshakeOnError(conn, err, "reading and checking client KnockKnock message") {
+	knock, err := receiveAndVerifyKnockKnock(conn, cfg)
+	if terminateHandshakeOnError(conn, err, "reading and checking client Knock message") {
 		return
 	}
 
@@ -51,22 +52,17 @@ func newClientHandshake(conn net.Conn, cfg *config.Config) {
 		return
 	}
 
-	cliShare, srvShare, err := negotiateSharedSecrets(conn, cfg, knockKnock.WireType)
-	if terminateHandshakeOnError(conn, err, "challenging client with puzzle") {
+	cliShare, srvShare, err := negotiateSharedSecrets(conn, cfg, knock)
+	if terminateHandshakeOnError(conn, err, "negotiating shared secrets") {
 		return
 	}
-
 	fmt.Print(cliShare, srvShare)
-
-	if terminateHandshakeOnError(conn, err, "requesting Shared Secret") {
-		return
-	}
 
 	// WIP
 }
 
-func receiveAndVerifyKnockKnock(conn net.Conn, cfg *config.Config) (*msg.KnockKnock, error) {
-	knockKnock := msg.KnockKnock{}
+func receiveAndVerifyKnockKnock(conn net.Conn, cfg *config.Config) (*msg.Knock, error) {
+	knockKnock := msg.Knock{}
 	err := binary.Read(conn, binary.LittleEndian, &knockKnock)
 	if err != nil {
 		return nil, err
@@ -85,20 +81,15 @@ func receiveAndVerifyKnockKnock(conn net.Conn, cfg *config.Config) (*msg.KnockKn
 }
 
 func challengeWithPuzzle(conn net.Conn) (*msg.PuzzleRequest, *msg.PuzzleResponse, error) {
+
 	var payload [64]byte
-	n, err := io.ReadFull(rand.Reader, payload[:])
-	if err != nil {
-		return nil, nil, err
-	}
-	if n != 64 {
-		return nil, nil, errors.New("Could not get enough randomness")
-	}
+	copy(payload[:], cryptoutil.RandBytes(64))
 	req := msg.PuzzleRequest{
 		Puzzle: msg.PuzzleSHA512LZ,
 		Body:   payload,
 		Param:  msg.SHA512LZParam,
 	}
-	err = binary.Write(conn, binary.LittleEndian, req)
+	err := binary.Write(conn, binary.LittleEndian, req)
 
 	res := msg.PuzzleResponse{}
 	err = binary.Read(conn, binary.LittleEndian, &res)
@@ -111,17 +102,21 @@ func challengeWithPuzzle(conn net.Conn) (*msg.PuzzleRequest, *msg.PuzzleResponse
 	return &req, &res, nil
 }
 
-func negotiateSharedSecrets(conn net.Conn, cfg *config.Config, wireType uint32) (clientShare *msg.SharedSecretResponse, serverShare *msg.SharedSecretRequest, err error) {
+func negotiateSharedSecrets(conn net.Conn, cfg *config.Config, knock *msg.Knock) (clientShare *msg.SharedSecretResponse, serverShare *msg.SharedSecretRequest, err error) {
 
 	//FIXME: TODO: SERVER IS USING THE FIRST KEY AVAILABLE
 	serverKey := cfg.Keys[0]
+	clientKey, err := cfg.GetKeyByID(knock.KeyIdAsString())
+	if err != nil {
+		return clientShare, serverShare, err
+	}
 
 	shrSecretReq := msg.SharedSecretRequest{
 		KeyId: serverKey.GetKeyIdAs32Byte(),
 	}
-	if wireType == msg.WireTypeSimpleAES256 {
+	if knock.WireType == msg.WireTypeSimpleAES256 {
 		shrSecretReq.Bits = 128
-	} else if wireType == msg.WireTypeTripleAES256 {
+	} else if knock.WireType == msg.WireTypeTripleAES256 {
 		shrSecretReq.Bits = 256 * 3 / 2
 	} else {
 		panic("I don't know how many bits I need for that WireType key.")
@@ -131,6 +126,25 @@ func negotiateSharedSecrets(conn net.Conn, cfg *config.Config, wireType uint32) 
 		return clientShare, serverShare, err
 	}
 	clientShare, err = readSharedSecret(conn)
+	if err != nil {
+		return clientShare, serverShare, err
+	}
+
+	//serverKeyPrivate := cryptoutil.SidhPrivateKeyFromString(serverKey.Pvt)
+	clientKeyPublic := cryptoutil.SidhPublicKeyFromString(clientKey.Pub)
+
+	var kem *sidh.KEM
+	if serverKey.GetKeyType() == cryptoutil.KeyTypeSidhFp503 {
+		kem = sidh.NewSike503(rand.Reader)
+	} else if serverKey.GetKeyType() == cryptoutil.KeyTypeSidhFp751 {
+		kem = sidh.NewSike751(rand.Reader)
+	} else {
+		return clientShare, serverShare, errors.New("can not create kem for key")
+	}
+	var cipherText = make([]byte, kem.CiphertextSize())
+	var sharedSecret = make([]byte, kem.SharedSecretSize())
+
+	err = kem.Encapsulate(cipherText, sharedSecret, clientKeyPublic)
 	if err != nil {
 		return clientShare, serverShare, err
 	}

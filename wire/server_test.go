@@ -7,12 +7,14 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/google/logger"
 	"github.com/kuking/go-pqsw/config"
 	"github.com/kuking/go-pqsw/cryptoutil"
 	"github.com/kuking/go-pqsw/wire/msg"
 	"github.com/kuking/go-pqsw/wire/sha512lz"
 	"io"
 	"net"
+	"os"
 	"testing"
 	"time"
 )
@@ -22,12 +24,13 @@ import (
 var cfg *config.Config
 var cPipe, sPipe net.Conn
 
-var knockKnock msg.KnockKnock
+var knock msg.Knock
 var puzzleRequest msg.PuzzleRequest
 var puzzleResponse msg.PuzzleResponse
 var sharedSecretRequest msg.SharedSecretRequest
 
 func setup() {
+	logger.Init("test", true, false, os.Stdout)
 	cfg = config.NewEmpty()
 	cPipe, sPipe = net.Pipe()
 	go newClientHandshake(sPipe, cfg)
@@ -41,7 +44,7 @@ func cleanup() {
 func TestKnockKnock_EmptyPayload(t *testing.T) {
 	setup()
 	defer cleanup()
-	send(t, msg.KnockKnock{})
+	send(t, msg.Knock{})
 	assertClosedConnection(t)
 }
 
@@ -76,8 +79,8 @@ func TestKnockKnock_InvalidProtocolVersion(t *testing.T) {
 	defer cleanup()
 
 	givenValidKnockKnock()
-	knockKnock.ProtocolVersion = 1234
-	send(t, knockKnock)
+	knock.ProtocolVersion = 1234
+	send(t, knock)
 	assertClosedConnection(t)
 }
 
@@ -86,8 +89,8 @@ func TestKnockKnock_InvalidWireType(t *testing.T) {
 	defer cleanup()
 
 	givenValidKnockKnock()
-	knockKnock.WireType = 1234
-	send(t, knockKnock)
+	knock.WireType = 1234
+	send(t, knock)
 	assertClosedConnection(t)
 }
 
@@ -96,8 +99,8 @@ func TestKnockKnock_WireType_TripleAES256(t *testing.T) {
 	defer cleanup()
 
 	givenValidKnockKnock()
-	knockKnock.WireType = msg.WireTypeTripleAES256
-	send(t, knockKnock)
+	knock.WireType = msg.WireTypeTripleAES256
+	send(t, knock)
 	recv(t, &puzzleRequest)
 	assertConnectionStillOpen(t)
 }
@@ -107,8 +110,8 @@ func TestKnockKnock_UnrecognizedKeyId(t *testing.T) {
 	defer cleanup()
 
 	givenValidKnockKnock()
-	copy(knockKnock.KeyId[5:], []byte{1, 2, 3, 4, 5, 6, 7, 8})
-	send(t, knockKnock)
+	copy(knock.KeyId[5:], []byte{1, 2, 3, 4, 5, 6, 7, 8})
+	send(t, knock)
 	assertClosedConnection(t)
 }
 
@@ -117,7 +120,7 @@ func TestKnockKnock_GoodButDisconnects(t *testing.T) {
 	defer cleanup()
 
 	givenValidKnockKnock()
-	send(t, knockKnock)
+	send(t, knock)
 	_ = cPipe.Close()
 
 	assertClosedConnection(t)
@@ -128,7 +131,7 @@ func TestKnockKnock_HappyPath(t *testing.T) {
 	defer cleanup()
 
 	givenValidKnockKnock()
-	send(t, knockKnock)
+	send(t, knock)
 	recv(t, &puzzleRequest)
 	assertConnectionStillOpen(t)
 }
@@ -138,7 +141,7 @@ func TestPuzzleResponse_DisconnectOnRequest(t *testing.T) {
 	defer cleanup()
 
 	givenValidKnockKnock()
-	send(t, knockKnock)
+	send(t, knock)
 	recv(t, &puzzleRequest)
 	_ = cPipe.Close()
 
@@ -150,7 +153,7 @@ func TestPuzzleResponse_HalfAnswerAndDisconnect(t *testing.T) {
 	defer cleanup()
 
 	givenValidKnockKnock()
-	send(t, knockKnock)
+	send(t, knock)
 	recv(t, &puzzleRequest)
 	send(t, []byte{1, 2, 3})
 	_ = cPipe.Close()
@@ -163,7 +166,7 @@ func TestPuzzleResponse_InvalidResponse(t *testing.T) {
 	defer cleanup()
 
 	givenValidKnockKnock()
-	send(t, knockKnock)
+	send(t, knock)
 	recv(t, &puzzleRequest)
 	send(t, &msg.PuzzleResponse{}) //invalid response, should disconnect
 
@@ -175,7 +178,7 @@ func TestPuzzleResponse_NoiseResponse(t *testing.T) {
 	defer cleanup()
 
 	givenValidKnockKnock()
-	send(t, knockKnock)
+	send(t, knock)
 	recv(t, &puzzleRequest)
 	if sendNoise(1<<20) < 20 {
 		t.Error("This should have at least sent 20 bytes of noise before failing")
@@ -188,7 +191,7 @@ func TestPuzzleResponse_GoodButDisconnects(t *testing.T) {
 	defer cleanup()
 
 	givenValidKnockKnock()
-	send(t, knockKnock)
+	send(t, knock)
 	recv(t, &puzzleRequest)
 	puzzleResponse.Response = sha512lz.Solve(puzzleRequest.Body, int(puzzleRequest.Param))
 	send(t, &puzzleResponse)
@@ -202,7 +205,7 @@ func TestPuzzle_HappyPath(t *testing.T) {
 	defer cleanup()
 
 	givenValidKnockKnock()
-	send(t, knockKnock)
+	send(t, knock)
 	recv(t, &puzzleRequest)
 	puzzleResponse.Response = sha512lz.Solve(puzzleRequest.Body, int(puzzleRequest.Param))
 	send(t, &puzzleResponse)
@@ -216,12 +219,12 @@ func givenValidKnockKnock() {
 	keyId, _ := cfg.CreateAndAddKey(cryptoutil.KeyTypeSidhFp503) // first key, let's assume it is the server one
 	keyId, _ = cfg.CreateAndAddKey(cryptoutil.KeyTypeSidhFp503)  // second one, the client
 	key, _ := cfg.GetKeyByID(*keyId)
-	knockKnock = msg.KnockKnock{
+	knock = msg.Knock{
 		KeyId:           key.GetKeyIdAs32Byte(),
 		ProtocolVersion: msg.ProtocolVersion,
 		WireType:        msg.WireTypeSimpleAES256,
 	}
-	fmt.Printf("TEST: Happy Valid KnockKnock with Key: %v\n", *keyId)
+	fmt.Printf("TEST: Happy Valid Knock with Key: %v\n", *keyId)
 }
 
 func sendNoise(minimumAmount int) int {

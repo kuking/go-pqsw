@@ -1,9 +1,15 @@
 package msg
 
-type KnockKnock struct {
+import "encoding/base64"
+
+type Knock struct {
 	KeyId           [256 / 8]byte
 	ProtocolVersion uint32
 	WireType        uint32
+}
+
+func (k *Knock) KeyIdAsString() string {
+	return base64.StdEncoding.EncodeToString(k.KeyId[:])
 }
 
 const ProtocolVersion = 1

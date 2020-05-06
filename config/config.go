@@ -47,6 +47,15 @@ func (k *Key) GetKeyIdAs32Byte() [32]byte {
 	return res
 }
 
+func (k *Key) GetKeyType() cryptoutil.KeyType {
+	for kt, kts := range cryptoutil.KeyTypeAsString {
+		if k.Type == kts {
+			return kt
+		}
+	}
+	return cryptoutil.KeyTypeUnknown
+}
+
 func (c *Config) CreateAndAddKey(keyType cryptoutil.KeyType) (*string, error) {
 
 	var pvt *sidh.PrivateKey

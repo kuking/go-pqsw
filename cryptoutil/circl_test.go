@@ -12,7 +12,7 @@ func TestSidhNewPair(t *testing.T) {
 	}
 
 	pvt, pub, err = SidhNewPair(KeyTypeSidhFp503)
-	if pvt == nil || pub == nil || err == nil {
+	if pvt == nil || pub == nil || err != nil {
 		t.Fatal("could not create key")
 	}
 	if pvt.Size() != 56 {
@@ -23,7 +23,7 @@ func TestSidhNewPair(t *testing.T) {
 	}
 
 	pvt, pub, err = SidhNewPair(KeyTypeSidhFp751)
-	if pvt == nil || pub == nil || err == nil {
+	if pvt == nil || pub == nil || err != nil {
 		t.Fatal("could not create key")
 	}
 	if pvt.Size() != 80 {
