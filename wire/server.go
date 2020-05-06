@@ -72,9 +72,8 @@ func receiveAndVerifyKnock(conn net.Conn, cfg *config.Config) (*msg.Knock, error
 	if knock.WireType != msg.WireTypeSimpleAES256 && knock.WireType != msg.WireTypeTripleAES256 {
 		return nil, errors.Errorf("Wire Type requested not supported: %v", knock.WireType)
 	}
-	keyId := config.KeyIdFromBytes(knock.KeyId)
-	if !cfg.ContainsKeyById(keyId) {
-		return nil, errors.Errorf("KeyId not recognized: %v", keyId)
+	if !cfg.ContainsKeyById(knock.KeyIdAsString()) {
+		return nil, errors.Errorf("KeyId not recognized: %v", knock.KeyIdAsString())
 	}
 	return &knock, nil
 }
@@ -96,7 +95,7 @@ func challengeWithPuzzle(conn net.Conn) (*msg.PuzzleRequest, *msg.PuzzleResponse
 		return nil, nil, err
 	}
 	if !sha512lz.Verify(req.Body, res.Response, int(req.Param)) {
-		return &req, &res, errors.New("Client did not pass Puzzle challenge.")
+		return &req, &res, errors.New("Client did not pass the Puzzle challenge")
 	}
 	return &req, &res, nil
 }
@@ -114,7 +113,7 @@ func negotiateSharedSecrets(conn net.Conn, cfg *config.Config, knock *msg.Knock)
 		KeyId: serverKey.GetKeyIdAs32Byte(),
 	}
 	if knock.WireType == msg.WireTypeSimpleAES256 {
-		shrSecretReq.Bits = 128
+		shrSecretReq.Bits = 256 / 2
 	} else if knock.WireType == msg.WireTypeTripleAES256 {
 		shrSecretReq.Bits = 256 * 3 / 2
 	} else {

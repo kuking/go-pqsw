@@ -120,10 +120,6 @@ func (c *Config) ContainsKeyById(keyId string) bool {
 	return err == nil
 }
 
-func KeyIdFromBytes(keyIdBytes [32]byte) string {
-	return base64.StdEncoding.EncodeToString(keyIdBytes[:])
-}
-
 func (c *Config) GetKeyByID(keyId string) (*Key, error) {
 	// FIXME: needs locking, not lineal search (might not be necessary ...)
 	for _, k := range c.Keys {
