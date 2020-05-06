@@ -1,10 +1,8 @@
 package wire
 
 import (
-	"crypto/rand"
 	"encoding/binary"
 	"fmt"
-	"github.com/cloudflare/circl/dh/sidh"
 	"github.com/google/logger"
 	"github.com/kuking/go-pqsw/config"
 	"github.com/kuking/go-pqsw/cryptoutil"
@@ -100,68 +98,90 @@ func challengeWithPuzzle(conn net.Conn) (*msg.PuzzleRequest, *msg.PuzzleResponse
 	return &req, &res, nil
 }
 
-func negotiateSharedSecrets(conn net.Conn, cfg *config.Config, knock *msg.Knock) (clientShare *msg.SharedSecretResponse, serverShare *msg.SharedSecretRequest, err error) {
+func negotiateSharedSecrets(conn net.Conn, cfg *config.Config, knock *msg.Knock) (
+	clientShare *msg.SharedSecret,
+	serverShare *msg.SharedSecret,
+	err error) {
 
 	//FIXME: TODO: SERVER IS USING THE FIRST KEY AVAILABLE
-	serverKey := cfg.Keys[0]
+	serverKey := &cfg.Keys[0]
 	clientKey, err := cfg.GetKeyByID(knock.KeyIdAsString())
 	if err != nil {
 		return clientShare, serverShare, err
 	}
 
+	kemsRequiredPerSide := (calculateTotalKEMsRequired(serverKey.GetKeyType(), knock.WireType) + 1) / 2
 	shrSecretReq := msg.SharedSecretRequest{
-		KeyId: serverKey.GetKeyIdAs32Byte(),
-	}
-	if knock.WireType == msg.WireTypeSimpleAES256 {
-		shrSecretReq.Bits = 256 / 2
-	} else if knock.WireType == msg.WireTypeTripleAES256 {
-		shrSecretReq.Bits = 256 * 3 / 2
-	} else {
-		panic("I don't know how many bits I need for that WireType key.")
+		KeyId:  serverKey.GetKeyIdAs32Byte(),
+		Counts: kemsRequiredPerSide,
 	}
 	err = binary.Write(conn, binary.LittleEndian, shrSecretReq)
 	if err != nil {
 		return clientShare, serverShare, err
 	}
-	clientShare, err = readSharedSecret(conn)
+
+	clientShare, err = readSharedSecret(conn, serverKey, clientKey)
 	if err != nil {
 		return clientShare, serverShare, err
 	}
 
-	//serverKeyPrivate := cryptoutil.SidhPrivateKeyFromString(serverKey.Pvt)
-	clientKeyPublic := cryptoutil.SidhPublicKeyFromString(clientKey.Pub)
+	//kem, err := serverKey.GetKemSike()
+	//if err != nil {
+	//	return nil, nil, err
+	//}
 
-	var kem *sidh.KEM
-	if serverKey.GetKeyType() == cryptoutil.KeyTypeSidhFp503 {
-		kem = sidh.NewSike503(rand.Reader)
-	} else if serverKey.GetKeyType() == cryptoutil.KeyTypeSidhFp751 {
-		kem = sidh.NewSike751(rand.Reader)
-	} else {
-		return clientShare, serverShare, errors.New("can not create kem for key")
-	}
-	var cipherText = make([]byte, kem.CiphertextSize())
-	var sharedSecret = make([]byte, kem.SharedSecretSize())
-
-	err = kem.Encapsulate(cipherText, sharedSecret, clientKeyPublic)
-	if err != nil {
-		return clientShare, serverShare, err
-	}
-
+	//var cipherText = make([]byte, kem.CiphertextSize())
+	//var sharedSecret = make([]byte, kem.SharedSecretSize())
+	//err = kem.Encapsulate(cipherText, sharedSecret, cli)
+	//if err != nil {
+	//	return clientShare, serverShare, err
+	//}
+	//
 	return clientShare, serverShare, err
 }
 
-func readSharedSecret(conn net.Conn) (res *msg.SharedSecretResponse, err error) {
-	bundle := msg.SharedSecretBundleDescriptionResponse{}
-	err = binary.Read(conn, binary.LittleEndian, &bundle)
+func calculateTotalKEMsRequired(keyType cryptoutil.KeyType, wireType uint32) uint16 {
+	kemSize := 0
+	switch keyType {
+	case cryptoutil.KeyTypeSidhFp503:
+		kemSize = cryptoutil.KeyTypeSidhFp503KemSize
+	case cryptoutil.KeyTypeSidhFp751:
+		kemSize = cryptoutil.KeyTypeSidhFp751KemSize
+	default:
+		panic("I don't know about this key, but this should have been catch earlier")
+	}
+	wireBytes := 0
+	switch wireType {
+	case msg.WireTypeSimpleAES256:
+		wireBytes = 256 / 8
+	case msg.WireTypeTripleAES256:
+		wireBytes = 256 * 3 / 8
+	default:
+		panic("i can not recognise this wire type, which should have been catch already")
+	}
+	return uint16((wireBytes + 1) / kemSize)
+}
+
+func readSharedSecret(conn net.Conn, receiver *config.Key, sender *config.Key) (res *msg.SharedSecret, err error) {
+	bundleDesc := msg.SharedSecretBundleDescriptionResponse{}
+	err = binary.Read(conn, binary.LittleEndian, &bundleDesc)
 	if err != nil {
 		return res, err
 	}
-	res = &msg.SharedSecretResponse{
-		Shared: make([][]byte, bundle.SecretsCount),
+	res = &msg.SharedSecret{
+		Shared: make([][]byte, bundleDesc.SecretsCount),
 	}
-	for count := 0; count < int(bundle.SecretsCount); count++ {
-		res.Shared[count] = make([]byte, bundle.SecretSize)
-		err = binary.Read(conn, binary.LittleEndian, &res.Shared[count])
+	kem, err := receiver.GetKemSike()
+	if err != nil {
+		return res, err
+	}
+	for count := 0; count < int(bundleDesc.SecretsCount); count++ {
+		cipherText := make([]byte, bundleDesc.SecretSize)
+		err = binary.Read(conn, binary.LittleEndian, cipherText)
+		if err != nil {
+			return res, err
+		}
+		err = kem.Decapsulate(res.Shared[count], receiver.GetSidhPrivateKey(), sender.GetSidhPublicKey(), cipherText)
 		if err != nil {
 			return res, err
 		}

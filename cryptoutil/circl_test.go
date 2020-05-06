@@ -8,7 +8,7 @@ import (
 func TestSidhNewPair(t *testing.T) {
 	pvt, pub, err := SidhNewPair(KeyTypeInvalid)
 	if pvt != nil || pub != nil || err == nil {
-		t.Fatal("invalid keytype sould err")
+		t.Fatal("invalid KeyType should err")
 	}
 
 	pvt, pub, err = SidhNewPair(KeyTypeSidhFp503)

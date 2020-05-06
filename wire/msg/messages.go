@@ -30,8 +30,8 @@ const PuzzleSHA512LZ = 1
 const SHA512LZParam = 16
 
 type SharedSecretRequest struct {
-	KeyId [256 / 8]byte
-	Bits  uint16
+	KeyId  [256 / 8]byte
+	Counts uint16
 }
 
 // Message used in the wire, describes how many 'SecretsCount' of size 'SecretSize' to read.
@@ -40,6 +40,6 @@ type SharedSecretBundleDescriptionResponse struct {
 	SecretSize   uint16
 }
 
-type SharedSecretResponse struct {
+type SharedSecret struct {
 	Shared [][]byte
 }

@@ -12,6 +12,9 @@ const (
 	KeyTypeInvalid   KeyType = 0
 	KeyTypeSidhFp503 KeyType = 1
 	KeyTypeSidhFp751 KeyType = 2
+
+	KeyTypeSidhFp503KemSize = 16
+	KeyTypeSidhFp751KemSize = 24
 )
 
 var KeyTypeAsString = map[KeyType]string{

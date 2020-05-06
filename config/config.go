@@ -1,6 +1,7 @@
 package config
 
 import (
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"github.com/cloudflare/circl/dh/sidh"
@@ -54,6 +55,25 @@ func (k *Key) GetKeyType() cryptoutil.KeyType {
 		}
 	}
 	return cryptoutil.KeyTypeUnknown
+}
+
+func (k *Key) GetSidhPrivateKey() *sidh.PrivateKey {
+	return cryptoutil.SidhPrivateKeyFromString(k.Pvt)
+}
+
+func (k *Key) GetSidhPublicKey() *sidh.PublicKey {
+	return cryptoutil.SidhPublicKeyFromString(k.Pvt)
+}
+
+func (k *Key) GetKemSike() (*sidh.KEM, error) {
+	switch k.GetKeyType() {
+	case cryptoutil.KeyTypeSidhFp503:
+		return sidh.NewSike503(rand.Reader), nil
+	case cryptoutil.KeyTypeSidhFp751:
+		return sidh.NewSike751(rand.Reader), nil
+	default:
+		return nil, errors.New("can not create kem for key")
+	}
 }
 
 func (c *Config) CreateAndAddKey(keyType cryptoutil.KeyType) (*string, error) {
