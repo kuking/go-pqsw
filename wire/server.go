@@ -2,7 +2,6 @@ package wire
 
 import (
 	"crypto/rand"
-	"encoding/base64"
 	"encoding/binary"
 	"fmt"
 	"github.com/cloudflare/circl/dh/sidh"
@@ -42,7 +41,7 @@ func Listen(hostPort string, cfg *config.Config) error {
 
 func newClientHandshake(conn net.Conn, cfg *config.Config) {
 
-	knock, err := receiveAndVerifyKnockKnock(conn, cfg)
+	knock, err := receiveAndVerifyKnock(conn, cfg)
 	if terminateHandshakeOnError(conn, err, "reading and checking client Knock message") {
 		return
 	}
@@ -61,23 +60,23 @@ func newClientHandshake(conn net.Conn, cfg *config.Config) {
 	// WIP
 }
 
-func receiveAndVerifyKnockKnock(conn net.Conn, cfg *config.Config) (*msg.Knock, error) {
-	knockKnock := msg.Knock{}
-	err := binary.Read(conn, binary.LittleEndian, &knockKnock)
+func receiveAndVerifyKnock(conn net.Conn, cfg *config.Config) (*msg.Knock, error) {
+	knock := msg.Knock{}
+	err := binary.Read(conn, binary.LittleEndian, &knock)
 	if err != nil {
 		return nil, err
 	}
-	if knockKnock.ProtocolVersion != 1 {
-		return nil, errors.Errorf("Protocol version not supported: %v", knockKnock.ProtocolVersion)
+	if knock.ProtocolVersion != 1 {
+		return nil, errors.Errorf("Protocol version not supported: %v", knock.ProtocolVersion)
 	}
-	if knockKnock.WireType != msg.WireTypeSimpleAES256 && knockKnock.WireType != msg.WireTypeTripleAES256 {
-		return nil, errors.Errorf("Wire Type requested not supported: %v", knockKnock.WireType)
+	if knock.WireType != msg.WireTypeSimpleAES256 && knock.WireType != msg.WireTypeTripleAES256 {
+		return nil, errors.Errorf("Wire Type requested not supported: %v", knock.WireType)
 	}
-	keyId := base64.StdEncoding.EncodeToString(knockKnock.KeyId[:])
+	keyId := config.KeyIdFromBytes(knock.KeyId)
 	if !cfg.ContainsKeyById(keyId) {
 		return nil, errors.Errorf("KeyId not recognized: %v", keyId)
 	}
-	return &knockKnock, nil
+	return &knock, nil
 }
 
 func challengeWithPuzzle(conn net.Conn) (*msg.PuzzleRequest, *msg.PuzzleResponse, error) {
