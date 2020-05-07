@@ -126,6 +126,17 @@ func TestKnockKnock_GoodButDisconnects(t *testing.T) {
 	assertClosedConnection(t)
 }
 
+func TestKnock_ServerKicksOutWhenTripleAES256Required(t *testing.T) {
+	setup()
+	defer cleanup()
+
+	givenValidKnockKnock()
+	cfg.RequireTripleAES256 = true
+
+	send(t, knock)
+	assertClosedConnection(t)
+}
+
 func TestKnockKnock_HappyPath(t *testing.T) {
 	setup()
 	defer cleanup()
@@ -200,6 +211,19 @@ func TestPuzzleResponse_GoodButDisconnects(t *testing.T) {
 	assertClosedConnection(t)
 }
 
+func TestPuzzleResponse_ServerUsesDifficultyFromConfig(t *testing.T) {
+	setup()
+	defer cleanup()
+
+	cfg.PuzzleDifficulty = 12345
+	givenValidKnockKnock()
+	send(t, knock)
+	recv(t, &puzzleRequest)
+	if puzzleRequest.Param != 12345 {
+		t.Fatal("server should use config entry 'PuzzleDifficulty'")
+	}
+}
+
 func TestPuzzle_HappyPath(t *testing.T) {
 	setup()
 	defer cleanup()
@@ -215,16 +239,20 @@ func TestPuzzle_HappyPath(t *testing.T) {
 
 }
 
-func givenValidKnockKnock() {
+func givenServerAndClientKeys() {
 	keyId, _ := cfg.CreateAndAddKey(cryptoutil.KeyTypeSidhFp503) // first key, let's assume it is the server one
-	keyId, _ = cfg.CreateAndAddKey(cryptoutil.KeyTypeSidhFp503)  // second one, the client
-	key, _ := cfg.GetKeyByID(*keyId)
+	cfg.ServerKey = *keyId
+	keyId, _ = cfg.CreateAndAddKey(cryptoutil.KeyTypeSidhFp503) // second one, the client
+}
+
+func givenValidKnockKnock() {
+	givenServerAndClientKeys()
+	key, _ := cfg.GetKeyByID(cfg.ServerKey)
 	knock = msg.Knock{
 		KeyId:           key.GetKeyIdAs32Byte(),
 		ProtocolVersion: msg.ProtocolVersion,
 		WireType:        msg.WireTypeSimpleAES256,
 	}
-	fmt.Printf("TEST: Happy Valid Knock with Key: %v\n", *keyId)
 }
 
 func sendNoise(minimumAmount int) int {

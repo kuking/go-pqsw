@@ -77,10 +77,11 @@ func main() {
 
 			cfg, err := config.LoadFrom(filename)
 			panicOnErr(err)
-			uuid, err := cfg.CreateAndAddKey(keyType)
+			keyId, err := cfg.CreateAndAddKey(keyType)
 			panicOnErr(err)
+			cfg.ServerKey = *keyId
 			panicOnErr(cfg.SaveTo(filename))
-			fmt.Println("Key generated with uuid", *uuid)
+			fmt.Println("Key generated with keyId", *keyId)
 			os.Exit(0)
 		}
 

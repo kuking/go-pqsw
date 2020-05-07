@@ -15,6 +15,9 @@ func TestNewEmpty(t *testing.T) {
 	if len(config.Keys) != 0 || len(config.Otps) != 0 || len(config.Uniques) != 0 {
 		t.Fatal("New Config should be empty")
 	}
+	if config.PuzzleDifficulty == 0 {
+		t.Fatal("It should set the PuzzleDifficulty")
+	}
 }
 
 func TestLoadSaveRoundTrip(t *testing.T) {

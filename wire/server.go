@@ -44,7 +44,7 @@ func newClientHandshake(conn net.Conn, cfg *config.Config) {
 		return
 	}
 
-	_, _, err = challengeWithPuzzle(conn)
+	_, _, err = challengeWithPuzzle(conn, cfg)
 	if terminateHandshakeOnError(conn, err, "challenging client with puzzle") {
 		return
 	}
@@ -70,20 +70,23 @@ func receiveAndVerifyKnock(conn net.Conn, cfg *config.Config) (*msg.Knock, error
 	if knock.WireType != msg.WireTypeSimpleAES256 && knock.WireType != msg.WireTypeTripleAES256 {
 		return nil, errors.Errorf("Wire Type requested not supported: %v", knock.WireType)
 	}
+	if cfg.RequireTripleAES256 && knock.WireType != msg.WireTypeTripleAES256 {
+		return nil, errors.Errorf("not enough security requested")
+	}
 	if !cfg.ContainsKeyById(knock.KeyIdAsString()) {
 		return nil, errors.Errorf("KeyId not recognized: %v", knock.KeyIdAsString())
 	}
 	return &knock, nil
 }
 
-func challengeWithPuzzle(conn net.Conn) (*msg.PuzzleRequest, *msg.PuzzleResponse, error) {
+func challengeWithPuzzle(conn net.Conn, cfg *config.Config) (*msg.PuzzleRequest, *msg.PuzzleResponse, error) {
 
 	var payload [64]byte
 	copy(payload[:], cryptoutil.RandBytes(64))
 	req := msg.PuzzleRequest{
 		Puzzle: msg.PuzzleSHA512LZ,
 		Body:   payload,
-		Param:  msg.SHA512LZParam,
+		Param:  uint16(cfg.PuzzleDifficulty),
 	}
 	err := binary.Write(conn, binary.LittleEndian, req)
 
@@ -103,8 +106,10 @@ func negotiateSharedSecrets(conn net.Conn, cfg *config.Config, knock *msg.Knock)
 	serverShare *msg.SharedSecret,
 	err error) {
 
-	//FIXME: TODO: SERVER IS USING THE FIRST KEY AVAILABLE
-	serverKey := &cfg.Keys[0]
+	serverKey, err := cfg.GetKeyByID(cfg.ServerKey)
+	if err != nil {
+		return clientShare, serverShare, errors.Wrap(err, "ServerKey specified by configuration not found")
+	}
 	clientKey, err := cfg.GetKeyByID(knock.KeyIdAsString())
 	if err != nil {
 		return clientShare, serverShare, err

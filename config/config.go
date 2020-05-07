@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"github.com/cloudflare/circl/dh/sidh"
 	"github.com/kuking/go-pqsw/cryptoutil"
-	"github.com/kuking/go-pqsw/wire/msg"
 	"github.com/pkg/errors"
 	"io/ioutil"
 )
@@ -31,11 +30,14 @@ type Unique struct {
 }
 
 type Config struct {
-	Keys                      []Key
-	Otps                      []Otp
-	Uniques                   []Unique
-	ClientProvingKeyDerivAlgo uint16 // not wired yet
-	ClientProvingKeyIters     uint32 // not wired yet
+	Keys    []Key
+	Otps    []Otp
+	Uniques []Unique
+
+	ServerKey           string
+	OtpId               string
+	PuzzleDifficulty    int
+	RequireTripleAES256 bool
 }
 
 func (k *Key) GetKeyIdAs32Byte() [32]byte {
@@ -152,10 +154,12 @@ func (c *Config) GetKeyByID(keyId string) (*Key, error) {
 
 func NewEmpty() *Config {
 	return &Config{
-		Keys:                      make([]Key, 0),
-		Otps:                      make([]Otp, 0),
-		Uniques:                   make([]Unique, 0),
-		ClientProvingKeyDerivAlgo: msg.PuzzleSHA512LZ,
-		ClientProvingKeyIters:     msg.SHA512LZParam,
+		Keys:                make([]Key, 0),
+		Otps:                make([]Otp, 0),
+		Uniques:             make([]Unique, 0),
+		ServerKey:           "",
+		OtpId:               "",
+		PuzzleDifficulty:    16,
+		RequireTripleAES256: false,
 	}
 }
