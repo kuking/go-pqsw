@@ -39,13 +39,13 @@ func Listen(hostPort string, cfg *config.Config) error {
 
 func newClientHandshake(conn net.Conn, cfg *config.Config) {
 
-	knock, err := receiveAndVerifyKnock(conn, cfg)
-	if terminateHandshakeOnError(conn, err, "reading and checking client Knock message") {
+	knock, serr := receiveAndVerifyKnock(conn, cfg)
+	if terminateHandshakeOnServerError(conn, serr, "reading and checking client Knock message") {
 		return
 	}
 
-	_, _, err = challengeWithPuzzle(conn, cfg)
-	if terminateHandshakeOnError(conn, err, "challenging client with puzzle") {
+	_, _, serr = challengeWithPuzzle(conn, cfg)
+	if terminateHandshakeOnServerError(conn, serr, "challenging client with puzzle") {
 		return
 	}
 
@@ -58,28 +58,36 @@ func newClientHandshake(conn net.Conn, cfg *config.Config) {
 	// WIP
 }
 
-func receiveAndVerifyKnock(conn net.Conn, cfg *config.Config) (*msg.Knock, error) {
+func receiveAndVerifyKnock(conn net.Conn, cfg *config.Config) (*msg.Knock, *ServerError) {
 	knock := msg.Knock{}
 	err := binary.Read(conn, binary.LittleEndian, &knock)
 	if err != nil {
-		return nil, err
+		return nil, ServerErrorWrap(err)
 	}
 	if knock.ProtocolVersion != 1 {
-		return nil, errors.Errorf("Protocol version not supported: %v", knock.ProtocolVersion)
+		return nil, Disconnect(
+			errors.Errorf("protocol version not supported: %v", knock.ProtocolVersion),
+			msg.DisconnectCauseProtocolRequestedNotSupported)
 	}
 	if knock.WireType != msg.WireTypeSimpleAES256 && knock.WireType != msg.WireTypeTripleAES256 {
-		return nil, errors.Errorf("Wire Type requested not supported: %v", knock.WireType)
+		return nil, Disconnect(
+			errors.Errorf("wire type requested not supported: %v", knock.WireType),
+			msg.DisconnectCauseProtocolRequestedNotSupported)
 	}
 	if cfg.RequireTripleAES256 && knock.WireType != msg.WireTypeTripleAES256 {
-		return nil, errors.Errorf("not enough security requested")
+		return nil, Disconnect(
+			errors.Errorf("not enough security requested"),
+			msg.DisconnectCauseNotEnoughSecurityRequested)
 	}
 	if !cfg.ContainsKeyById(knock.KeyIdAsString()) {
-		return nil, errors.Errorf("KeyId not recognized: %v", knock.KeyIdAsString())
+		return nil, Disconnect(
+			errors.Errorf("keyid not recognized: %v", knock.KeyIdAsString()),
+			msg.DisconnectCauseClientKeyNotRecognised)
 	}
 	return &knock, nil
 }
 
-func challengeWithPuzzle(conn net.Conn, cfg *config.Config) (*msg.PuzzleRequest, *msg.PuzzleResponse, error) {
+func challengeWithPuzzle(conn net.Conn, cfg *config.Config) (*msg.PuzzleRequest, *msg.PuzzleResponse, *ServerError) {
 
 	var payload [64]byte
 	copy(payload[:], cryptoutil.RandBytes(64))
@@ -93,10 +101,12 @@ func challengeWithPuzzle(conn net.Conn, cfg *config.Config) (*msg.PuzzleRequest,
 	res := msg.PuzzleResponse{}
 	err = binary.Read(conn, binary.LittleEndian, &res)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, ServerErrorWrap(err)
 	}
 	if !sha512lz.Verify(req.Body, res.Response, int(req.Param)) {
-		return &req, &res, errors.New("Client did not pass the Puzzle challenge")
+		return &req, &res, Disconnect(
+			errors.New("client did not pass the puzzle challenge"),
+			msg.DisconnectCausePuzzleNotSolved)
 	}
 	return &req, &res, nil
 }
@@ -198,10 +208,49 @@ func terminateHandshakeOnError(conn net.Conn, err error, explanation string) boo
 	if err == nil {
 		return false
 	}
-	logger.Infof("Remote: '%v' terminated with error: '%v', while: '%v'", conn.RemoteAddr(), err, explanation)
+	logger.Infof("remote: '%v' terminated with error: '%v', while: '%v'", conn.RemoteAddr(), err, explanation)
 	err2 := conn.Close()
 	if err2 != nil {
-		logger.Infof("Could not close connection %v", conn)
+		logger.Infof("could not close connection %v", conn)
 	}
 	return true
+}
+
+func terminateHandshakeOnServerError(conn net.Conn, serr *ServerError, explanation string) bool {
+	if serr == nil {
+		return false
+	}
+	if serr.disconnectCause != msg.DisconnectCauseNone {
+		logger.Infof("remote: '%v' disconnecting with verbose cause: %v", conn.RemoteAddr(), serr.disconnectCause)
+		cause := msg.DisconnectCause{
+			Delimiter: msg.DisconnectCauseDelimiter,
+			Cause:     serr.disconnectCause,
+		}
+		err := binary.Write(conn, binary.LittleEndian, cause)
+		if err != nil {
+			logger.Infof("remote '%v' could not send last disconnect message due to: %v", conn.RemoteAddr(), err)
+		}
+	}
+	return terminateHandshakeOnError(conn, serr.err, explanation)
+}
+
+// ------------------------------------------------------------------------------------------------------------------
+
+type ServerError struct {
+	err             error
+	disconnectCause uint32
+}
+
+func ServerErrorWrap(err error) *ServerError {
+	return &ServerError{
+		err:             err,
+		disconnectCause: msg.DisconnectCauseNone,
+	}
+}
+
+func Disconnect(err error, cause uint32) *ServerError {
+	return &ServerError{
+		err:             err,
+		disconnectCause: cause,
+	}
 }

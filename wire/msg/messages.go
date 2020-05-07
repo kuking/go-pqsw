@@ -2,6 +2,19 @@ package msg
 
 import "encoding/base64"
 
+type DisconnectCause struct {
+	Delimiter uint32
+	Cause     uint32
+}
+
+const DisconnectCauseDelimiter uint32 = 0xdeadbeef
+const DisconnectCauseNone uint32 = 0
+const DisconnectCauseProtocolRequestedNotSupported uint32 = 1
+const DisconnectCauseNotEnoughSecurityRequested uint32 = 2
+const DisconnectCauseClientKeyNotRecognised uint32 = 3
+const DisconnectCausePuzzleNotSolved uint32 = 4
+const DisconnectCauseMyMistake uint32 = 0xffff
+
 type Knock struct {
 	KeyId           [256 / 8]byte
 	ProtocolVersion uint32
@@ -27,7 +40,6 @@ type PuzzleResponse struct {
 }
 
 const PuzzleSHA512LZ = 1
-const SHA512LZParam = 16
 
 type SharedSecretRequest struct {
 	KeyId  [256 / 8]byte

@@ -1,12 +1,9 @@
 package wire
 
 import (
-	"bytes"
 	"crypto/rand"
 	"encoding/binary"
-	"encoding/hex"
 	"errors"
-	"fmt"
 	"github.com/google/logger"
 	"github.com/kuking/go-pqsw/config"
 	"github.com/kuking/go-pqsw/cryptoutil"
@@ -41,21 +38,21 @@ func cleanup() {
 	_ = sPipe.Close()
 }
 
-func TestKnockKnock_EmptyPayload(t *testing.T) {
+func TestKnock_EmptyPayload(t *testing.T) {
 	setup()
 	defer cleanup()
 	send(t, msg.Knock{})
-	assertClosedConnection(t)
+	assertClosedConnectionWithCause(t, msg.DisconnectCauseProtocolRequestedNotSupported)
 }
 
-func TestKnockKnock_ClientClosesASAP(t *testing.T) {
+func TestKnock_ClientClosesASAP(t *testing.T) {
 	setup()
 	defer cleanup()
 	_ = cPipe.Close()
 	assertClosedConnection(t)
 }
 
-func TestKnockKnock_ClosesIncompleteSend(t *testing.T) {
+func TestKnock_ClosesIncompleteSend(t *testing.T) {
 	setup()
 	defer cleanup()
 	send(t, []byte{1, 2, 3})
@@ -63,7 +60,7 @@ func TestKnockKnock_ClosesIncompleteSend(t *testing.T) {
 	assertClosedConnection(t)
 }
 
-func TestKnockKnock_Noise(t *testing.T) {
+func TestKnock_Noise(t *testing.T) {
 	setup()
 	defer cleanup()
 
@@ -71,30 +68,31 @@ func TestKnockKnock_Noise(t *testing.T) {
 		t.Error("This should have at least sent 20 bytes of noise before failing")
 	}
 
-	assertClosedConnection(t)
+	assertClosedConnectionWithCause(t, msg.DisconnectCauseProtocolRequestedNotSupported)
 }
 
-func TestKnockKnock_InvalidProtocolVersion(t *testing.T) {
+func TestKnock_InvalidProtocolVersion(t *testing.T) {
 	setup()
 	defer cleanup()
 
 	givenValidKnockKnock()
 	knock.ProtocolVersion = 1234
 	send(t, knock)
-	assertClosedConnection(t)
+	assertClosedConnectionWithCause(t, msg.DisconnectCauseProtocolRequestedNotSupported)
 }
 
-func TestKnockKnock_InvalidWireType(t *testing.T) {
+func TestKnock_InvalidWireType(t *testing.T) {
 	setup()
 	defer cleanup()
 
 	givenValidKnockKnock()
 	knock.WireType = 1234
 	send(t, knock)
-	assertClosedConnection(t)
+
+	assertClosedConnectionWithCause(t, msg.DisconnectCauseProtocolRequestedNotSupported)
 }
 
-func TestKnockKnock_WireType_TripleAES256(t *testing.T) {
+func TestKnock_WireType_TripleAES256(t *testing.T) {
 	setup()
 	defer cleanup()
 
@@ -105,17 +103,17 @@ func TestKnockKnock_WireType_TripleAES256(t *testing.T) {
 	assertConnectionStillOpen(t)
 }
 
-func TestKnockKnock_UnrecognizedKeyId(t *testing.T) {
+func TestKnock_UnrecognizedKeyId(t *testing.T) {
 	setup()
 	defer cleanup()
 
 	givenValidKnockKnock()
 	copy(knock.KeyId[5:], []byte{1, 2, 3, 4, 5, 6, 7, 8})
 	send(t, knock)
-	assertClosedConnection(t)
+	assertClosedConnectionWithCause(t, msg.DisconnectCauseClientKeyNotRecognised)
 }
 
-func TestKnockKnock_GoodButDisconnects(t *testing.T) {
+func TestKnock_GoodButDisconnects(t *testing.T) {
 	setup()
 	defer cleanup()
 
@@ -134,10 +132,10 @@ func TestKnock_ServerKicksOutWhenTripleAES256Required(t *testing.T) {
 	cfg.RequireTripleAES256 = true
 
 	send(t, knock)
-	assertClosedConnection(t)
+	assertClosedConnectionWithCause(t, msg.DisconnectCauseNotEnoughSecurityRequested)
 }
 
-func TestKnockKnock_HappyPath(t *testing.T) {
+func TestKnock_HappyPath(t *testing.T) {
 	setup()
 	defer cleanup()
 
@@ -181,7 +179,7 @@ func TestPuzzleResponse_InvalidResponse(t *testing.T) {
 	recv(t, &puzzleRequest)
 	send(t, &msg.PuzzleResponse{}) //invalid response, should disconnect
 
-	assertClosedConnection(t)
+	assertClosedConnectionWithCause(t, msg.DisconnectCausePuzzleNotSolved)
 }
 
 func TestPuzzleResponse_NoiseResponse(t *testing.T) {
@@ -194,7 +192,8 @@ func TestPuzzleResponse_NoiseResponse(t *testing.T) {
 	if sendNoise(1<<20) < 20 {
 		t.Error("This should have at least sent 20 bytes of noise before failing")
 	}
-	assertClosedConnection(t)
+
+	assertClosedConnectionWithCause(t, msg.DisconnectCausePuzzleNotSolved)
 }
 
 func TestPuzzleResponse_GoodButDisconnects(t *testing.T) {
@@ -267,14 +266,33 @@ func sendNoise(minimumAmount int) int {
 			err = errors.New("problem creating randomness")
 		}
 		if err == nil {
+			err = cPipe.SetWriteDeadline(time.Now().Add(time.Millisecond * 10))
+		}
+		if err == nil {
 			err = binary.Write(cPipe, binary.LittleEndian, bunch)
 		}
 		count += len(bunch)
+	}
+	if err != nil {
+		logger.Infof("SendNoise finished due to %v", err)
 	}
 	return count
 }
 
 // ----------- common assertions -------------------------------------------------------------------------------------
+
+func assertClosedConnectionWithCause(t *testing.T, reason uint32) {
+	disconnectReason := msg.DisconnectCause{}
+	recv(t, &disconnectReason)
+
+	if disconnectReason.Delimiter != msg.DisconnectCauseDelimiter {
+		t.Fatal("server did not send the right disconnect delimiter")
+	}
+	if disconnectReason.Cause != reason {
+		t.Fatalf("expected disconnect cause %d, but got intead %d", reason, disconnectReason.Cause)
+	}
+	assertClosedConnection(t)
+}
 
 func assertClosedConnection(t *testing.T) {
 	one := make([]byte, 1)
@@ -293,12 +311,6 @@ func assertConnectionStillOpen(t *testing.T) {
 
 // ----------- misc --------------------------------------------------------------------------------------------------
 
-func printMessage(msg interface{}) {
-	var buf bytes.Buffer
-	_ = binary.Write(io.Writer(&buf), binary.LittleEndian, msg)
-	fmt.Printf("Msg: %v \nLen: %d \nHex: %v\n", buf.Bytes(), len(buf.Bytes()), hex.EncodeToString(buf.Bytes()))
-}
-
 func send(t *testing.T, msg interface{}) {
 	err := binary.Write(cPipe, binary.LittleEndian, msg)
 	if err != nil {
@@ -309,6 +321,6 @@ func send(t *testing.T, msg interface{}) {
 func recv(t *testing.T, msg interface{}) {
 	err := binary.Read(cPipe, binary.LittleEndian, msg)
 	if err != nil {
-		t.Errorf("Client->Server failed to send with: %v", err)
+		t.Errorf("Client failed to receive: %v", err)
 	}
 }

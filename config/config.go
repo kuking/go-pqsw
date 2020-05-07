@@ -159,7 +159,7 @@ func NewEmpty() *Config {
 		Uniques:             make([]Unique, 0),
 		ServerKey:           "",
 		OtpId:               "",
-		PuzzleDifficulty:    16,
+		PuzzleDifficulty:    16, // as 2020, roughly 100ms on Ryzen 3800X using vanilla  impl
 		RequireTripleAES256: false,
 	}
 }
