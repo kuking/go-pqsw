@@ -17,7 +17,7 @@ type Key struct {
 	Pub  string
 }
 
-type Psk struct {
+type Potps struct {
 	Uid  string
 	Path string
 	Hash string
@@ -31,11 +31,11 @@ type Unique struct {
 
 type Config struct {
 	Keys    []Key
-	Psks    []Psk
+	Potps   []Potps
 	Uniques []Unique
 
 	ServerKey           string
-	ServerPsk           string
+	ServerPotps         string
 	PuzzleDifficulty    int
 	RequireTripleAES256 bool
 }
@@ -155,10 +155,10 @@ func (c *Config) GetKeyByID(keyId string) (*Key, error) {
 func NewEmpty() *Config {
 	return &Config{
 		Keys:                make([]Key, 0),
-		Psks:                make([]Psk, 0),
+		Potps:               make([]Potps, 0),
 		Uniques:             make([]Unique, 0),
 		ServerKey:           "",
-		ServerPsk:           "",
+		ServerPotps:         "",
 		PuzzleDifficulty:    16, // as 2020, roughly 100ms on Ryzen 3800X using vanilla  impl
 		RequireTripleAES256: false,
 	}

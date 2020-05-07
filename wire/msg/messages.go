@@ -19,7 +19,7 @@ type ClientHello struct {
 	Protocol uint32
 	WireType uint32
 	KeyId    [256 / 8]byte
-	PskId    [256 / 8]byte
+	PotpId   [256 / 8]byte
 }
 
 func (k *ClientHello) KeyIdAsString() string {
