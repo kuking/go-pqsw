@@ -21,7 +21,7 @@ import (
 var cfg *config.Config
 var cPipe, sPipe net.Conn
 
-var knock msg.Knock
+var clientHello msg.ClientHello
 var puzzleRequest msg.PuzzleRequest
 var puzzleResponse msg.PuzzleResponse
 var sharedSecretRequest msg.SharedSecretRequest
@@ -29,6 +29,8 @@ var sharedSecretRequest msg.SharedSecretRequest
 func setup() {
 	logger.Init("test", true, false, os.Stdout)
 	cfg = config.NewEmpty()
+	cfg.PuzzleDifficulty = 10 // smaller value increases false positives in 'random/noise answer to the puzzle' tests
+	// 10 is pretty fast, no need to be specific about those tests at this time.
 	cPipe, sPipe = net.Pipe()
 	go newClientHandshake(sPipe, cfg)
 }
@@ -38,219 +40,201 @@ func cleanup() {
 	_ = sPipe.Close()
 }
 
-func TestKnock_EmptyPayload(t *testing.T) {
-	setup()
-	defer cleanup()
-	send(t, msg.Knock{})
-	assertClosedConnectionWithCause(t, msg.DisconnectCauseProtocolRequestedNotSupported)
-}
-
-func TestKnock_ClientClosesASAP(t *testing.T) {
+func TestConnect_DisconnectsASAP(t *testing.T) {
 	setup()
 	defer cleanup()
 	_ = cPipe.Close()
 	assertClosedConnection(t)
 }
 
-func TestKnock_ClosesIncompleteSend(t *testing.T) {
+func TestConnect_DisconnectsAfterReceive(t *testing.T) {
 	setup()
 	defer cleanup()
-	send(t, []byte{1, 2, 3})
+	recv(t, &puzzleRequest)
 	_ = cPipe.Close()
 	assertClosedConnection(t)
 }
 
-func TestKnock_Noise(t *testing.T) {
-	setup()
-	defer cleanup()
-
-	if sendNoise(1<<20) < 20 {
-		t.Error("This should have at least sent 20 bytes of noise before failing")
-	}
-
-	assertClosedConnectionWithCause(t, msg.DisconnectCauseProtocolRequestedNotSupported)
-}
-
-func TestKnock_InvalidProtocolVersion(t *testing.T) {
-	setup()
-	defer cleanup()
-
-	givenValidKnockKnock()
-	knock.ProtocolVersion = 1234
-	send(t, knock)
-	assertClosedConnectionWithCause(t, msg.DisconnectCauseProtocolRequestedNotSupported)
-}
-
-func TestKnock_InvalidWireType(t *testing.T) {
-	setup()
-	defer cleanup()
-
-	givenValidKnockKnock()
-	knock.WireType = 1234
-	send(t, knock)
-
-	assertClosedConnectionWithCause(t, msg.DisconnectCauseProtocolRequestedNotSupported)
-}
-
-func TestKnock_WireType_TripleAES256(t *testing.T) {
-	setup()
-	defer cleanup()
-
-	givenValidKnockKnock()
-	knock.WireType = msg.WireTypeTripleAES256
-	send(t, knock)
-	recv(t, &puzzleRequest)
-	assertConnectionStillOpen(t)
-}
-
-func TestKnock_UnrecognizedKeyId(t *testing.T) {
-	setup()
-	defer cleanup()
-
-	givenValidKnockKnock()
-	copy(knock.KeyId[5:], []byte{1, 2, 3, 4, 5, 6, 7, 8})
-	send(t, knock)
-	assertClosedConnectionWithCause(t, msg.DisconnectCauseClientKeyNotRecognised)
-}
-
-func TestKnock_GoodButDisconnects(t *testing.T) {
-	setup()
-	defer cleanup()
-
-	givenValidKnockKnock()
-	send(t, knock)
-	_ = cPipe.Close()
-
-	assertClosedConnection(t)
-}
-
-func TestKnock_ServerKicksOutWhenTripleAES256Required(t *testing.T) {
-	setup()
-	defer cleanup()
-
-	givenValidKnockKnock()
-	cfg.RequireTripleAES256 = true
-
-	send(t, knock)
-	assertClosedConnectionWithCause(t, msg.DisconnectCauseNotEnoughSecurityRequested)
-}
-
-func TestKnock_HappyPath(t *testing.T) {
-	setup()
-	defer cleanup()
-
-	givenValidKnockKnock()
-	send(t, knock)
-	recv(t, &puzzleRequest)
-	assertConnectionStillOpen(t)
-}
-
-func TestPuzzleResponse_DisconnectOnRequest(t *testing.T) {
-	setup()
-	defer cleanup()
-
-	givenValidKnockKnock()
-	send(t, knock)
-	recv(t, &puzzleRequest)
-	_ = cPipe.Close()
-
-	assertClosedConnection(t)
-}
-
-func TestPuzzleResponse_HalfAnswerAndDisconnect(t *testing.T) {
-	setup()
-	defer cleanup()
-
-	givenValidKnockKnock()
-	send(t, knock)
-	recv(t, &puzzleRequest)
-	send(t, []byte{1, 2, 3})
-	_ = cPipe.Close()
-
-	assertClosedConnection(t)
-}
-
-func TestPuzzleResponse_InvalidResponse(t *testing.T) {
-	setup()
-	defer cleanup()
-
-	givenValidKnockKnock()
-	send(t, knock)
-	recv(t, &puzzleRequest)
-	send(t, &msg.PuzzleResponse{}) //invalid response, should disconnect
-
-	assertClosedConnectionWithCause(t, msg.DisconnectCausePuzzleNotSolved)
-}
-
-func TestPuzzleResponse_NoiseResponse(t *testing.T) {
-	setup()
-	defer cleanup()
-
-	givenValidKnockKnock()
-	send(t, knock)
-	recv(t, &puzzleRequest)
-	if sendNoise(1<<20) < 20 {
-		t.Error("This should have at least sent 20 bytes of noise before failing")
-	}
-
-	assertClosedConnectionWithCause(t, msg.DisconnectCausePuzzleNotSolved)
-}
-
-func TestPuzzleResponse_GoodButDisconnects(t *testing.T) {
-	setup()
-	defer cleanup()
-
-	givenValidKnockKnock()
-	send(t, knock)
-	recv(t, &puzzleRequest)
-	puzzleResponse.Response = sha512lz.Solve(puzzleRequest.Body, int(puzzleRequest.Param))
-	send(t, &puzzleResponse)
-	_ = cPipe.Close()
-
-	assertClosedConnection(t)
-}
-
-func TestPuzzleResponse_ServerUsesDifficultyFromConfig(t *testing.T) {
-	setup()
-	defer cleanup()
-
+func TestConnect_ServerUsesDifficultyFromConfig(t *testing.T) {
+	logger.Init("test", true, false, os.Stdout)
+	cfg = config.NewEmpty()
 	cfg.PuzzleDifficulty = 12345
-	givenValidKnockKnock()
-	send(t, knock)
+	cPipe, sPipe = net.Pipe()
+	go newClientHandshake(sPipe, cfg)
+	defer cleanup()
+
 	recv(t, &puzzleRequest)
 	if puzzleRequest.Param != 12345 {
 		t.Fatal("server should use config entry 'PuzzleDifficulty'")
 	}
 }
 
-func TestPuzzle_HappyPath(t *testing.T) {
+func TestConnect_IncompletePuzzleAnswerAndCloses(t *testing.T) {
 	setup()
 	defer cleanup()
-
-	givenValidKnockKnock()
-	send(t, knock)
 	recv(t, &puzzleRequest)
-	puzzleResponse.Response = sha512lz.Solve(puzzleRequest.Body, int(puzzleRequest.Param))
-	send(t, &puzzleResponse)
-	recv(t, &sharedSecretRequest)
-	//fmt.Print("SharedSecretRequest", sharedSecretRequest)
-	assertConnectionStillOpen(t)
-
+	send(t, []byte{1, 2, 3})
+	_ = cPipe.Close()
+	assertClosedConnection(t)
 }
+
+func TestConnect_Noise(t *testing.T) {
+	setup()
+	defer cleanup()
+	recv(t, &puzzleRequest)
+	if sendNoise(1<<20) < 20 {
+		t.Error("this should have at least sent 20 bytes of noise before failing")
+	}
+	assertClosedConnectionWithCause(t, msg.DisconnectCausePuzzleNotSolved)
+}
+
+func TestConnect_WrongPuzzleAnswer(t *testing.T) {
+	setup()
+	defer cleanup()
+	recv(t, &puzzleRequest)
+	send(t, &msg.PuzzleResponse{}) //invalid response, should disconnect
+	assertClosedConnectionWithCause(t, msg.DisconnectCausePuzzleNotSolved)
+}
+
+func TestConnect_HappyPuzzleAnswer(t *testing.T) {
+	setup()
+	defer cleanup()
+	givenPuzzleAnswered(t)
+	assertConnectionStillOpen(t)
+}
+
+func TestConnect_ClientClosesCorrectAnswer(t *testing.T) {
+	setup()
+	defer cleanup()
+	givenPuzzleAnswered(t)
+	_ = cPipe.Close()
+	assertClosedConnection(t)
+}
+
+func TestClientHello_EmptyMessage(t *testing.T) {
+	setup()
+	defer cleanup()
+	givenPuzzleAnswered(t)
+	send(t, &msg.ClientHello{})
+	assertClosedConnectionWithCause(t, msg.DisconnectCauseProtocolRequestedNotSupported)
+}
+
+func TestClientHello_Noise(t *testing.T) {
+	setup()
+	defer cleanup()
+	givenPuzzleAnswered(t)
+	if sendNoise(1<<20) < 20 {
+		t.Error("this should have at least sent 20 bytes of noise before failing")
+	}
+	assertClosedConnectionWithCause(t, msg.DisconnectCauseProtocolRequestedNotSupported)
+}
+
+func TestClientHello_InvalidProtocolVersion(t *testing.T) {
+	setup()
+	defer cleanup()
+	givenPuzzleAnswered(t)
+	givenValidClientHello()
+	clientHello.Protocol = 1234
+	send(t, clientHello)
+	assertClosedConnectionWithCause(t, msg.DisconnectCauseProtocolRequestedNotSupported)
+}
+
+func TestClientHello_InvalidWireType(t *testing.T) {
+	setup()
+	defer cleanup()
+	givenPuzzleAnswered(t)
+	givenValidClientHello()
+	clientHello.WireType = 1234
+	send(t, clientHello)
+	assertClosedConnectionWithCause(t, msg.DisconnectCauseProtocolRequestedNotSupported)
+}
+
+func TestClientHello_WireType_TripleAES256(t *testing.T) {
+	setup()
+	defer cleanup()
+	givenPuzzleAnswered(t)
+	givenValidClientHello()
+	clientHello.WireType = msg.ClientHelloWireTypeTripleAES256
+	send(t, clientHello)
+	recv(t, &sharedSecretRequest)
+	assertConnectionStillOpen(t)
+}
+
+func TestClientHello_ServerDisconnectsWhenTripleAES256Required(t *testing.T) {
+	setup()
+	defer cleanup()
+	cfg.RequireTripleAES256 = true
+	givenPuzzleAnswered(t)
+	givenValidClientHello()
+	send(t, clientHello)
+	assertClosedConnectionWithCause(t, msg.DisconnectCauseNotEnoughSecurityRequested)
+}
+
+func TestClientHello_UnrecognizedKeyId(t *testing.T) {
+	setup()
+	defer cleanup()
+	givenPuzzleAnswered(t)
+	givenValidClientHello()
+	copy(clientHello.KeyId[5:], []byte{1, 2, 3, 4, 5, 6, 7, 8})
+	send(t, clientHello)
+	assertClosedConnectionWithCause(t, msg.DisconnectCauseClientKeyNotRecognised)
+}
+
+//XXX TestClientHello_UnrecognizedPskId
+//XXX TestClientHello_PskIdIsNotOptional
+
+func TestClientHello_SendsAndDisconnects(t *testing.T) {
+	setup()
+	defer cleanup()
+	givenPuzzleAnswered(t)
+	givenValidClientHello()
+	send(t, clientHello)
+	_ = cPipe.Close()
+	assertClosedConnection(t)
+}
+
+func TestClientHello_HappyPath(t *testing.T) {
+	setup()
+	defer cleanup()
+	givenPuzzleAnswered(t)
+	givenValidClientHello()
+	send(t, clientHello)
+	recv(t, &sharedSecretRequest)
+	assertConnectionStillOpen(t)
+}
+
+func TestSharedSecretRequest_Disconnect(t *testing.T) {
+	setup()
+	defer cleanup()
+	givenPuzzleAnswered(t)
+	givenValidClientHello()
+	send(t, clientHello)
+	_ = cPipe.Close()
+	assertClosedConnection(t)
+}
+
+// ----- givens ------------------------------------------------------------------------------------------------------
 
 func givenServerAndClientKeys() {
 	keyId, _ := cfg.CreateAndAddKey(cryptoutil.KeyTypeSidhFp503) // first key, let's assume it is the server one
 	cfg.ServerKey = *keyId
 	keyId, _ = cfg.CreateAndAddKey(cryptoutil.KeyTypeSidhFp503) // second one, the client
+
 }
 
-func givenValidKnockKnock() {
+func givenPuzzleAnswered(t *testing.T) {
+	recv(t, &puzzleRequest)
+	puzzleResponse.Response = sha512lz.Solve(puzzleRequest.Body, int(puzzleRequest.Param))
+	send(t, &puzzleResponse)
+}
+
+func givenValidClientHello() {
 	givenServerAndClientKeys()
 	key, _ := cfg.GetKeyByID(cfg.ServerKey)
-	knock = msg.Knock{
-		KeyId:           key.GetKeyIdAs32Byte(),
-		ProtocolVersion: msg.ProtocolVersion,
-		WireType:        msg.WireTypeSimpleAES256,
+	clientHello = msg.ClientHello{
+		KeyId:    key.GetKeyIdAs32Byte(),
+		Protocol: msg.ClientHelloProtocol,
+		WireType: msg.ClientHelloWireTypeSimpleAES256,
 	}
 }
 
@@ -297,7 +281,10 @@ func assertClosedConnectionWithCause(t *testing.T, reason uint32) {
 func assertClosedConnection(t *testing.T) {
 	one := make([]byte, 1)
 	if c, err := cPipe.Read(one); err == nil {
-		t.Fatalf("Server should have disconnected. But read count: %v", c)
+		t.Fatalf("client pipe should have disconnected. But read count: %v", c)
+	}
+	if c, err := sPipe.Read(one); err == nil {
+		t.Fatalf("server pipe should have disconnected. But read count: %v", c)
 	}
 }
 
@@ -305,7 +292,11 @@ func assertConnectionStillOpen(t *testing.T) {
 	one := make([]byte, 1)
 	_ = cPipe.SetReadDeadline(time.Now().Add(1 * time.Millisecond))
 	if _, err := cPipe.Read(one); err == io.EOF {
-		t.Fatal("Server should have not disconnected...")
+		t.Fatal("client pipe should have not disconnected...")
+	}
+	_ = sPipe.SetReadDeadline(time.Now().Add(1 * time.Millisecond))
+	if _, err := sPipe.Read(one); err == io.EOF {
+		t.Fatal("server pipe should have not disconnected...")
 	}
 }
 

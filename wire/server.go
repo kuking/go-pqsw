@@ -39,17 +39,17 @@ func Listen(hostPort string, cfg *config.Config) error {
 
 func newClientHandshake(conn net.Conn, cfg *config.Config) {
 
-	knock, serr := receiveAndVerifyKnock(conn, cfg)
-	if terminateHandshakeOnServerError(conn, serr, "reading and checking client Knock message") {
-		return
-	}
-
-	_, _, serr = challengeWithPuzzle(conn, cfg)
+	_, _, serr := challengeWithPuzzle(conn, cfg)
 	if terminateHandshakeOnServerError(conn, serr, "challenging client with puzzle") {
 		return
 	}
 
-	cliShare, srvShare, err := negotiateSharedSecrets(conn, cfg, knock)
+	clientHello, serr := receiveAndVerifyClientHello(conn, cfg)
+	if terminateHandshakeOnServerError(conn, serr, "reading and checking client ClientHello message") {
+		return
+	}
+
+	cliShare, srvShare, err := negotiateSharedSecrets(conn, cfg, clientHello)
 	if terminateHandshakeOnError(conn, err, "negotiating shared secrets") {
 		return
 	}
@@ -58,33 +58,33 @@ func newClientHandshake(conn net.Conn, cfg *config.Config) {
 	// WIP
 }
 
-func receiveAndVerifyKnock(conn net.Conn, cfg *config.Config) (*msg.Knock, *ServerError) {
-	knock := msg.Knock{}
-	err := binary.Read(conn, binary.LittleEndian, &knock)
+func receiveAndVerifyClientHello(conn net.Conn, cfg *config.Config) (*msg.ClientHello, *ServerError) {
+	clientHello := msg.ClientHello{}
+	err := binary.Read(conn, binary.LittleEndian, &clientHello)
 	if err != nil {
 		return nil, ServerErrorWrap(err)
 	}
-	if knock.ProtocolVersion != 1 {
+	if clientHello.Protocol != 1 {
 		return nil, Disconnect(
-			errors.Errorf("protocol version not supported: %v", knock.ProtocolVersion),
+			errors.Errorf("protocol version not supported: %v", clientHello.Protocol),
 			msg.DisconnectCauseProtocolRequestedNotSupported)
 	}
-	if knock.WireType != msg.WireTypeSimpleAES256 && knock.WireType != msg.WireTypeTripleAES256 {
+	if clientHello.WireType != msg.ClientHelloWireTypeSimpleAES256 && clientHello.WireType != msg.ClientHelloWireTypeTripleAES256 {
 		return nil, Disconnect(
-			errors.Errorf("wire type requested not supported: %v", knock.WireType),
+			errors.Errorf("wire type requested not supported: %v", clientHello.WireType),
 			msg.DisconnectCauseProtocolRequestedNotSupported)
 	}
-	if cfg.RequireTripleAES256 && knock.WireType != msg.WireTypeTripleAES256 {
+	if cfg.RequireTripleAES256 && clientHello.WireType != msg.ClientHelloWireTypeTripleAES256 {
 		return nil, Disconnect(
 			errors.Errorf("not enough security requested"),
 			msg.DisconnectCauseNotEnoughSecurityRequested)
 	}
-	if !cfg.ContainsKeyById(knock.KeyIdAsString()) {
+	if !cfg.ContainsKeyById(clientHello.KeyIdAsString()) {
 		return nil, Disconnect(
-			errors.Errorf("keyid not recognized: %v", knock.KeyIdAsString()),
+			errors.Errorf("keyid not recognized: %v", clientHello.KeyIdAsString()),
 			msg.DisconnectCauseClientKeyNotRecognised)
 	}
-	return &knock, nil
+	return &clientHello, nil
 }
 
 func challengeWithPuzzle(conn net.Conn, cfg *config.Config) (*msg.PuzzleRequest, *msg.PuzzleResponse, *ServerError) {
@@ -111,7 +111,7 @@ func challengeWithPuzzle(conn net.Conn, cfg *config.Config) (*msg.PuzzleRequest,
 	return &req, &res, nil
 }
 
-func negotiateSharedSecrets(conn net.Conn, cfg *config.Config, knock *msg.Knock) (
+func negotiateSharedSecrets(conn net.Conn, cfg *config.Config, clientHello *msg.ClientHello) (
 	clientShare *msg.SharedSecret,
 	serverShare *msg.SharedSecret,
 	err error) {
@@ -120,12 +120,12 @@ func negotiateSharedSecrets(conn net.Conn, cfg *config.Config, knock *msg.Knock)
 	if err != nil {
 		return clientShare, serverShare, errors.Wrap(err, "ServerKey specified by configuration not found")
 	}
-	clientKey, err := cfg.GetKeyByID(knock.KeyIdAsString())
+	clientKey, err := cfg.GetKeyByID(clientHello.KeyIdAsString())
 	if err != nil {
 		return clientShare, serverShare, err
 	}
 
-	kemsRequiredPerSide := (calculateTotalKEMsRequired(serverKey.GetKeyType(), knock.WireType) + 1) / 2
+	kemsRequiredPerSide := (calculateTotalKEMsRequired(serverKey.GetKeyType(), clientHello.WireType) + 1) / 2
 	shrSecretReq := msg.SharedSecretRequest{
 		KeyId:  serverKey.GetKeyIdAs32Byte(),
 		Counts: kemsRequiredPerSide,
@@ -167,9 +167,9 @@ func calculateTotalKEMsRequired(keyType cryptoutil.KeyType, wireType uint32) uin
 	}
 	wireBytes := 0
 	switch wireType {
-	case msg.WireTypeSimpleAES256:
+	case msg.ClientHelloWireTypeSimpleAES256:
 		wireBytes = 256 / 8
-	case msg.WireTypeTripleAES256:
+	case msg.ClientHelloWireTypeTripleAES256:
 		wireBytes = 256 * 3 / 8
 	default:
 		panic("i can not recognise this wire type, which should have been catch already")

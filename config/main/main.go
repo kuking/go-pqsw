@@ -54,7 +54,7 @@ func main() {
 			panicOnErr(err)
 			fmt.Printf("Config file '%s' loaded, it contains:\n", args[3])
 			fmt.Println(len(cfg.Keys), "Keys")
-			fmt.Println(len(cfg.Otps), "OTP Datasets")
+			fmt.Println(len(cfg.Psks), "PSKs")
 			fmt.Println(len(cfg.Uniques), "Unique replay store")
 			os.Exit(0)
 		}

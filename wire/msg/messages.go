@@ -15,19 +15,20 @@ const DisconnectCauseClientKeyNotRecognised uint32 = 3
 const DisconnectCausePuzzleNotSolved uint32 = 4
 const DisconnectCauseMyMistake uint32 = 0xffff
 
-type Knock struct {
-	KeyId           [256 / 8]byte
-	ProtocolVersion uint32
-	WireType        uint32
+type ClientHello struct {
+	Protocol uint32
+	WireType uint32
+	KeyId    [256 / 8]byte
+	PskId    [256 / 8]byte
 }
 
-func (k *Knock) KeyIdAsString() string {
+func (k *ClientHello) KeyIdAsString() string {
 	return base64.StdEncoding.EncodeToString(k.KeyId[:])
 }
 
-const ProtocolVersion = 1
-const WireTypeSimpleAES256 = 1
-const WireTypeTripleAES256 = 2
+const ClientHelloProtocol = 1
+const ClientHelloWireTypeSimpleAES256 = 1
+const ClientHelloWireTypeTripleAES256 = 2
 
 type PuzzleRequest struct {
 	Puzzle uint16
@@ -35,11 +36,11 @@ type PuzzleRequest struct {
 	Param  uint16
 }
 
+const PuzzleSHA512LZ = 1
+
 type PuzzleResponse struct {
 	Response [64]byte
 }
-
-const PuzzleSHA512LZ = 1
 
 type SharedSecretRequest struct {
 	KeyId  [256 / 8]byte
