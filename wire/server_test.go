@@ -216,9 +216,9 @@ func TestSharedSecretRequest_Disconnect(t *testing.T) {
 // ----- givens ------------------------------------------------------------------------------------------------------
 
 func givenServerAndClientKeys() {
-	keyId, _ := cfg.CreateAndAddKey(cryptoutil.KeyTypeSidhFp503) // first key, let's assume it is the server one
-	cfg.ServerKey = *keyId
-	keyId, _ = cfg.CreateAndAddKey(cryptoutil.KeyTypeSidhFp503) // second one, the client
+	key, _ := cfg.CreateAndAddKey(cryptoutil.KeyTypeSidhFp503) // first key, let's assume it is the server one
+	cfg.ServerKey = key.Uuid
+	key, _ = cfg.CreateAndAddKey(cryptoutil.KeyTypeSidhFp503) // second one, the client
 
 }
 

@@ -17,9 +17,10 @@ type Key struct {
 	Pub  string
 }
 
-type Potps struct {
+type Psk struct {
 	Uid  string
 	Path string
+	Body string
 	Hash string
 }
 
@@ -31,11 +32,13 @@ type Unique struct {
 
 type Config struct {
 	Keys    []Key
-	Potps   []Potps
+	Psks    []Psk
 	Uniques []Unique
 
 	ServerKey           string
-	ServerPotps         string
+	ServerPsk           string
+	ClientKey           string
+	ClientPsk           string
 	PuzzleDifficulty    int
 	RequireTripleAES256 bool
 }
@@ -78,7 +81,7 @@ func (k *Key) GetKemSike() (*sidh.KEM, error) {
 	}
 }
 
-func (c *Config) CreateAndAddKey(keyType cryptoutil.KeyType) (*string, error) {
+func (c *Config) CreateAndAddKey(keyType cryptoutil.KeyType) (*Key, error) {
 
 	var pvt *sidh.PrivateKey
 	var pub *sidh.PublicKey
@@ -95,7 +98,7 @@ func (c *Config) CreateAndAddKey(keyType cryptoutil.KeyType) (*string, error) {
 		Pub:  cryptoutil.SidhPublicKeyAsString(pub),
 	}
 	c.Keys = append(c.Keys, key)
-	return &keyId, nil
+	return &key, nil
 }
 
 func LoadFrom(file string) (*Config, error) {
@@ -152,13 +155,26 @@ func (c *Config) GetKeyByID(keyId string) (*Key, error) {
 	return nil, errors.Errorf("KeyId: %v not found.", keyId)
 }
 
+func (c *Config) CreateInPlacePsk(size int) (*Psk, error) {
+	b := cryptoutil.RandBytes(size)
+	uid := base64.StdEncoding.EncodeToString(cryptoutil.QuickSha256(b))
+	psk := Psk{
+		Uid:  uid,
+		Path: "",
+		Body: base64.StdEncoding.EncodeToString(b),
+		Hash: uid,
+	}
+	c.Psks = append(c.Psks, psk)
+	return &psk, nil
+}
+
 func NewEmpty() *Config {
 	return &Config{
 		Keys:                make([]Key, 0),
-		Potps:               make([]Potps, 0),
+		Psks:                make([]Psk, 0),
 		Uniques:             make([]Unique, 0),
 		ServerKey:           "",
-		ServerPotps:         "",
+		ServerPsk:           "",
 		PuzzleDifficulty:    16, // as 2020, roughly 100ms on Ryzen 3800X using vanilla  impl
 		RequireTripleAES256: false,
 	}
