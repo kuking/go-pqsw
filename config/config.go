@@ -37,6 +37,8 @@ type Config struct {
 
 	ServerKey           string
 	ServerPsk           string
+	ClientKey           string
+	ClientPsk           string
 	PuzzleDifficulty    int
 	RequireTripleAES256 bool
 }

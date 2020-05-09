@@ -62,12 +62,14 @@ func doCmdConfig() {
 				os.Exit(1)
 			}
 			cfg.ServerKey = key.Uuid
+			cfg.ClientKey = key.Uuid
 			psk, err := cfg.CreateInPlacePsk(1 * 4096)
 			panicOnErr(err)
 			if psk == nil {
 				fmt.Println("Could not create PSK.")
 			}
 			cfg.ServerPsk = psk.Uid
+			cfg.ClientPsk = psk.Uid
 			fmt.Printf("Vanilla config created with Fp751 key '%v' and a PSK of 4096 bits '%v'\n",
 				key.Uuid, psk.Uid)
 			panicOnErr(err)
