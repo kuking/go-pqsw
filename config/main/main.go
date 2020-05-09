@@ -17,8 +17,16 @@ func saveConfigAndFinish(config *config.Config, file string) {
 	}
 }
 func main() {
-	args := os.Args
+	doCmdHelp()
+	doCmdConfig()
+	doCmdKey()
+	// otherwise
+	showGeneralHelp()
+}
+
+func doCmdHelp() {
 	// There is probably a library to manage this better, but I will never finish this. Let me know if you know one :-)
+	args := os.Args
 	if len(args) > 1 && args[1] == "help" {
 		if len(args) == 2 {
 			showGeneralHelp()
@@ -36,6 +44,10 @@ func main() {
 			showKeyDeleteHelp()
 		}
 	}
+}
+
+func doCmdConfig() {
+	args := os.Args
 	if len(args) > 1 && args[1] == "config" {
 		if len(args) == 4 && args[2] == "create" {
 			saveConfigAndFinish(config.NewEmpty(), args[3])
@@ -43,11 +55,24 @@ func main() {
 		if len(args) == 4 && args[2] == "vanilla" {
 			filename := args[3]
 			cfg := config.NewEmpty()
-			_, err := cfg.CreateAndAddKey(cryptoutil.KeyTypeSidhFp751)
+			key, err := cfg.CreateAndAddKey(cryptoutil.KeyTypeSidhFp751)
+			panicOnErr(err)
+			if key == nil {
+				fmt.Println("Key could not be created.")
+				os.Exit(1)
+			}
+			cfg.ServerKey = key.Uuid
+			psk, err := cfg.CreateInPlacePsk(1 * 4096)
+			panicOnErr(err)
+			if psk == nil {
+				fmt.Println("Could not create PSK.")
+			}
+			cfg.ServerPsk = psk.Uid
+			fmt.Printf("Vanilla config created with Fp751 key '%v' and a PSK of 4096 bits '%v'\n",
+				key.Uuid, psk.Uid)
 			panicOnErr(err)
 			saveConfigAndFinish(cfg, filename)
 		}
-
 		if len(args) == 4 && args[2] == "show" {
 			filename := args[3]
 			cfg, err := config.LoadFrom(filename)
@@ -60,7 +85,10 @@ func main() {
 		}
 		showConfigHelp()
 	}
+}
 
+func doCmdKey() {
+	args := os.Args
 	if len(args) > 1 && args[1] == "key" {
 		if len(args) == 5 && args[2] == "create" {
 			keyTypeSt := args[3]
@@ -77,14 +105,13 @@ func main() {
 
 			cfg, err := config.LoadFrom(filename)
 			panicOnErr(err)
-			keyId, err := cfg.CreateAndAddKey(keyType)
+			key, err := cfg.CreateAndAddKey(keyType)
 			panicOnErr(err)
-			cfg.ServerKey = *keyId
+			cfg.ServerKey = key.Uuid
 			panicOnErr(cfg.SaveTo(filename))
-			fmt.Println("Key generated with keyId", *keyId)
+			fmt.Println("Key generated with keyId", key.Uuid)
 			os.Exit(0)
 		}
-
 		if len(args) == 5 && args[2] == "delete" {
 			uuid := args[3]
 			filename := args[4]
@@ -99,7 +126,6 @@ func main() {
 				os.Exit(-1)
 			}
 		}
-
 		if len(args) == 4 && args[2] == "list" {
 			cfg, err := config.LoadFrom(args[3])
 			panicOnErr(err)
@@ -111,13 +137,9 @@ func main() {
 				fmt.Printf("%s %s:%s\n", ktype, key.Type, key.Uuid)
 			}
 			os.Exit(0)
-
 		}
-
 		showKeyHelp()
 	}
-
-	showGeneralHelp()
 }
 
 func panicOnErr(err error) {
@@ -137,7 +159,7 @@ The commands are:
 
          config	   manages configuration files
          key       manages keys in the key store, including creation.
-         otp       manages one time password files
+         psk       manages pre shared keys 
          uniq      manages unique ids memories
 
 Use "ks help <command>" for more information about a command.`)
