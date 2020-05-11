@@ -123,9 +123,10 @@ func doListen() {
 	if err != nil {
 		panic(err)
 	}
+	fmt.Printf("Listening %v ...\n", ln.Addr())
 	for {
-		fmt.Println("New connection ...")
 		conn, err := ln.Accept()
+		fmt.Printf("New connection from %v ...\n", conn.RemoteAddr())
 		if err != nil {
 			fmt.Println("Error accepting connection", err)
 		} else {
