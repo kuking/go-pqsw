@@ -12,7 +12,7 @@ import (
 
 func TestNewEmpty(t *testing.T) {
 	config := NewEmpty()
-	if len(config.Keys) != 0 || len(config.Psks) != 0 || len(config.Uniques) != 0 {
+	if len(config.Keys) != 0 || len(config.Potps) != 0 || len(config.Uniques) != 0 {
 		t.Fatal("New Config should be empty")
 	}
 	if config.PuzzleDifficulty == 0 {

@@ -63,15 +63,15 @@ func doCmdConfig() {
 			}
 			cfg.ServerKey = key.Uuid
 			cfg.ClientKey = key.Uuid
-			psk, err := cfg.CreateInPlacePsk(1 * 4096)
+			potp, err := cfg.CreateInPlacePotp(1 * 4096)
 			panicOnErr(err)
-			if psk == nil {
+			if potp == nil {
 				fmt.Println("Could not create PSK.")
 			}
-			cfg.ServerPsk = psk.Uid
-			cfg.ClientPsk = psk.Uid
+			cfg.ServerPotp = potp.Uuid
+			cfg.ClientPotp = potp.Uuid
 			fmt.Printf("Vanilla config created with Fp751 key '%v' and a PSK of 4096 bits '%v'\n",
-				key.Uuid, psk.Uid)
+				key.Uuid, potp.Uuid)
 			panicOnErr(err)
 			saveConfigAndFinish(cfg, filename)
 		}
@@ -81,7 +81,7 @@ func doCmdConfig() {
 			panicOnErr(err)
 			fmt.Printf("Config file '%s' loaded, it contains:\n", args[3])
 			fmt.Println(len(cfg.Keys), "Keys")
-			fmt.Println(len(cfg.Psks), "PSKs")
+			fmt.Println(len(cfg.Potps), "PSKs")
 			fmt.Println(len(cfg.Uniques), "Unique replay store")
 			os.Exit(0)
 		}

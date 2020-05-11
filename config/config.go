@@ -8,6 +8,7 @@ import (
 	"github.com/kuking/go-pqsw/cryptoutil"
 	"github.com/pkg/errors"
 	"io/ioutil"
+	"math/big"
 )
 
 type Key struct {
@@ -17,11 +18,10 @@ type Key struct {
 	Pub  string
 }
 
-type Psk struct {
-	Uid  string
+type Potp struct {
+	Uuid string
 	Path string
 	Body string
-	Hash string
 }
 
 type Unique struct {
@@ -32,13 +32,13 @@ type Unique struct {
 
 type Config struct {
 	Keys    []Key
-	Psks    []Psk
+	Potps   []Potp
 	Uniques []Unique
 
 	ServerKey           string
-	ServerPsk           string
+	ServerPotp          string
 	ClientKey           string
-	ClientPsk           string
+	ClientPotp          string
 	PuzzleDifficulty    int
 	RequireTripleAES256 bool
 }
@@ -67,7 +67,7 @@ func (k *Key) GetSidhPrivateKey() *sidh.PrivateKey {
 }
 
 func (k *Key) GetSidhPublicKey() *sidh.PublicKey {
-	return cryptoutil.SidhPublicKeyFromString(k.Pvt)
+	return cryptoutil.SidhPublicKeyFromString(k.Pub)
 }
 
 func (k *Key) GetKemSike() (*sidh.KEM, error) {
@@ -79,6 +79,37 @@ func (k *Key) GetKemSike() (*sidh.KEM, error) {
 	default:
 		return nil, errors.New("can not create kem for key")
 	}
+}
+
+func (p *Potp) GetPotpIdAs32Byte() [32]byte {
+	b, err := base64.StdEncoding.DecodeString(p.Uuid)
+	if err != nil || len(b) != 32 {
+		return [32]byte{}
+	}
+	var res [32]byte
+	copy(res[:], b)
+	return res
+}
+
+func (p *Potp) GetBodyAsArray() []byte {
+	b, err := base64.StdEncoding.DecodeString(p.Body)
+	if err != nil {
+		return make([]byte, 0)
+	}
+	return b
+}
+func (p *Potp) GetSize() uint64 {
+	return uint64(len(p.GetBodyAsArray()))
+}
+
+// the following does not implements file based OTPs
+func (p *Potp) PickOTP(size int) (otp []byte, offset uint64) {
+	wholeOtp := p.GetBodyAsArray()
+	ofs, err := rand.Int(rand.Reader, big.NewInt(int64(len(wholeOtp))-int64(size))) // -size for the sake of simplicity
+	if err != nil {
+		panic(err)
+	}
+	return wholeOtp[ofs.Uint64() : ofs.Uint64()+uint64(size)], ofs.Uint64()
 }
 
 func (c *Config) CreateAndAddKey(keyType cryptoutil.KeyType) (*Key, error) {
@@ -155,26 +186,35 @@ func (c *Config) GetKeyByID(keyId string) (*Key, error) {
 	return nil, errors.Errorf("KeyId: %v not found.", keyId)
 }
 
-func (c *Config) CreateInPlacePsk(size int) (*Psk, error) {
+func (c *Config) GetPotpByID(potpId string) (*Potp, error) {
+	// FIXME: needs locking, not lineal search (might not be necessary ...)
+	for _, p := range c.Potps {
+		if potpId == p.Uuid {
+			return &p, nil
+		}
+	}
+	return nil, errors.Errorf("PotpId: %v not found.", potpId)
+}
+
+func (c *Config) CreateInPlacePotp(size int) (*Potp, error) {
 	b := cryptoutil.RandBytes(size)
-	uid := base64.StdEncoding.EncodeToString(cryptoutil.QuickSha256(b))
-	psk := Psk{
-		Uid:  uid,
+	uuid := base64.StdEncoding.EncodeToString(cryptoutil.QuickSha256(b))
+	psk := Potp{
+		Uuid: uuid,
 		Path: "",
 		Body: base64.StdEncoding.EncodeToString(b),
-		Hash: uid,
 	}
-	c.Psks = append(c.Psks, psk)
+	c.Potps = append(c.Potps, psk)
 	return &psk, nil
 }
 
 func NewEmpty() *Config {
 	return &Config{
 		Keys:                make([]Key, 0),
-		Psks:                make([]Psk, 0),
+		Potps:               make([]Potp, 0),
 		Uniques:             make([]Unique, 0),
 		ServerKey:           "",
-		ServerPsk:           "",
+		ServerPotp:          "",
 		PuzzleDifficulty:    16, // as 2020, roughly 100ms on Ryzen 3800X using vanilla  impl
 		RequireTripleAES256: false,
 	}
