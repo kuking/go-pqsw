@@ -1,27 +1,28 @@
 package msg
 
-import (
-	"encoding/base64"
-)
+import "encoding/base64"
 
 type DisconnectCause struct {
 	Delimiter uint32
 	Cause     uint32
 }
 
-const DisconnectCauseDelimiter uint32 = 0xdeadbeef
-const DisconnectCauseNone uint32 = 0
-const DisconnectCauseProtocolRequestedNotSupported uint32 = 1
-const DisconnectCauseNotEnoughSecurityRequested uint32 = 2
-const DisconnectCauseClientKeyNotRecognised uint32 = 3
-const DisconnectCausePuzzleNotSolved uint32 = 4
-const DisconnectCauseMyMistake uint32 = 0xffff
+const (
+	DisconnectCauseDelimiter                     uint32 = 0xdeadbeef
+	DisconnectCauseNone                          uint32 = 0
+	DisconnectCauseProtocolRequestedNotSupported uint32 = 1
+	DisconnectCauseNotEnoughSecurityRequested    uint32 = 2
+	DisconnectCauseClientKeyNotRecognised        uint32 = 3
+	DisconnectCausePuzzleNotSolved               uint32 = 4
+	DisconnectCauseMyMistake                     uint32 = 0xffff
+
+	SharedSecretRequestTypeKEMAndPotp uint8 = 0
+)
 
 type ClientHello struct {
 	Protocol uint32
 	WireType uint32
 	KeyId    [256 / 8]byte
-	PotpId   [256 / 8]byte
 }
 
 func (k *ClientHello) KeyIdAsString() string {
@@ -52,10 +53,23 @@ type SharedSecretRequest struct {
 	PotpIdStillValid [256 / 8]byte
 }
 
+func (s *SharedSecretRequest) KeyIdPreferredAsString() string {
+	return base64.StdEncoding.EncodeToString(s.KeyIdPreferred[:])
+}
+func (s *SharedSecretRequest) KeyIdStillValidAsString() string {
+	return base64.StdEncoding.EncodeToString(s.KeyIdStillValid[:])
+}
+func (s *SharedSecretRequest) PotpIdPreferredAsString() string {
+	return base64.StdEncoding.EncodeToString(s.PotpIdPreferred[:])
+}
+func (s *SharedSecretRequest) PotpIdStillValidAsString() string {
+	return base64.StdEncoding.EncodeToString(s.PotpIdStillValid[:])
+}
+
 // Message used in the wire, describes how many 'SecretsCount' of size 'SecretSize' to read.
 type SharedSecretBundleDescriptionResponse struct {
-	PubKeyIdUsed uint8 // 0=preferred, 1=still valid
-	PotpIdUsed   uint8 // ditto
+	PubKeyIdUsed [256 / 8]byte
+	PotpIdUsed   [256 / 8]byte
 	PotpOffset   uint64
 	SecretsCount uint8
 	SecretSize   uint16

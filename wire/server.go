@@ -124,13 +124,16 @@ func negotiateSharedSecrets(conn net.Conn, cfg *config.Config, clientHello *msg.
 	if err != nil {
 		return clientShare, serverShare, err
 	}
+	serverPotp, err := cfg.GetPotpByID(cfg.ServerPotp)
+	if err != nil {
+		return clientShare, serverShare, err
+	}
 
-	//XXX	kemsRequiredPerSide := (calculateTotalKEMsRequired(serverKey.GetKeyType(), clientHello.WireType) + 1) / 2
 	shrSecretReq := msg.SharedSecretRequest{
 		RequestType:      0,
 		KeyIdPreferred:   serverKey.GetKeyIdAs32Byte(),
 		KeyIdStillValid:  [32]byte{},
-		PotpIdPreferred:  [32]byte{},
+		PotpIdPreferred:  serverPotp.GetPotpIdAs32Byte(),
 		PotpIdStillValid: [32]byte{},
 	}
 	err = binary.Write(conn, binary.LittleEndian, shrSecretReq)
@@ -163,28 +166,6 @@ func negotiateSharedSecrets(conn net.Conn, cfg *config.Config, clientHello *msg.
 	return clientShare, serverShare, err
 }
 
-func calculateTotalKEMsRequired(keyType cryptoutil.KeyType, wireType uint32) uint16 {
-	kemSize := 0
-	switch keyType {
-	case cryptoutil.KeyTypeSidhFp503:
-		kemSize = cryptoutil.KeyTypeSidhFp503KemSize
-	case cryptoutil.KeyTypeSidhFp751:
-		kemSize = cryptoutil.KeyTypeSidhFp751KemSize
-	default:
-		panic("I don't know about this key, but this should have been catch earlier")
-	}
-	wireBytes := 0
-	switch wireType {
-	case msg.ClientHelloWireTypeSimpleAES256:
-		wireBytes = 256 / 8
-	case msg.ClientHelloWireTypeTripleAES256:
-		wireBytes = 256 * 3 / 8
-	default:
-		panic("i can not recognise this wire type, which should have been catch already")
-	}
-	return uint16((wireBytes + 1) / kemSize)
-}
-
 func readSharedSecret(conn net.Conn, receiver *config.Key, sender *config.Key) (res *msg.SharedSecret, err error) {
 	bundleDesc := msg.SharedSecretBundleDescriptionResponse{}
 	err = binary.Read(conn, binary.LittleEndian, &bundleDesc)
@@ -200,6 +181,7 @@ func readSharedSecret(conn net.Conn, receiver *config.Key, sender *config.Key) (
 	}
 	for count := 0; count < int(bundleDesc.SecretsCount); count++ {
 		cipherText := make([]byte, bundleDesc.SecretSize)
+		res.Shared[count] = make([]byte, kem.SharedSecretSize())
 		err = binary.Read(conn, binary.LittleEndian, cipherText)
 		if err != nil {
 			return res, err

@@ -25,6 +25,7 @@ var clientHello msg.ClientHello
 var puzzleRequest msg.PuzzleRequest
 var puzzleResponse msg.PuzzleResponse
 var sharedSecretRequest msg.SharedSecretRequest
+var sharedSecretBundleDescResponse msg.SharedSecretBundleDescriptionResponse
 
 func setup() {
 	logger.Init("test", true, false, os.Stdout)
@@ -152,6 +153,7 @@ func TestClientHello_InvalidWireType(t *testing.T) {
 func TestClientHello_WireType_TripleAES256(t *testing.T) {
 	setup()
 	defer cleanup()
+	givenOtpInConfig()
 	givenPuzzleAnswered(t)
 	givenValidClientHello()
 	clientHello.WireType = msg.ClientHelloWireTypeTripleAES256
@@ -180,9 +182,6 @@ func TestClientHello_UnrecognizedKeyId(t *testing.T) {
 	assertClosedConnectionWithCause(t, msg.DisconnectCauseClientKeyNotRecognised)
 }
 
-//XXX TestClientHello_UnrecognizedPskId
-//XXX TestClientHello_PskIdIsNotOptional
-
 func TestClientHello_SendsAndDisconnects(t *testing.T) {
 	setup()
 	defer cleanup()
@@ -196,6 +195,7 @@ func TestClientHello_SendsAndDisconnects(t *testing.T) {
 func TestClientHello_HappyPath(t *testing.T) {
 	setup()
 	defer cleanup()
+	givenOtpInConfig()
 	givenPuzzleAnswered(t)
 	givenValidClientHello()
 	send(t, clientHello)
@@ -206,11 +206,60 @@ func TestClientHello_HappyPath(t *testing.T) {
 func TestSharedSecretRequest_Disconnect(t *testing.T) {
 	setup()
 	defer cleanup()
+	givenOtpInConfig()
 	givenPuzzleAnswered(t)
-	givenValidClientHello()
-	send(t, clientHello)
+	givenClientHelloAnswered(t)
+	recv(t, &sharedSecretRequest)
 	_ = cPipe.Close()
 	assertClosedConnection(t)
+}
+
+func TestSharedSecretRequest_Happy(t *testing.T) {
+	setup()
+	defer cleanup()
+	givenOtpInConfig()
+
+	givenPuzzleAnswered(t)
+	givenClientHelloAnswered(t)
+
+	recv(t, &sharedSecretRequest)
+	if sharedSecretRequest.RequestType != msg.SharedSecretRequestTypeKEMAndPotp {
+		t.Error("sharedSecretRequest.RequestType should be 0, as so far the only version implemented")
+	}
+
+	serverKey, _ := cfg.GetKeyByID(sharedSecretRequest.KeyIdPreferredAsString())
+	clientKey, _ := cfg.GetKeyByID(cfg.ClientKey)
+	kem, _ := clientKey.GetKemSike()
+	clientSecretsCount := 32 * 1 / kem.SharedSecretSize()
+	if ((32 * 1) % kem.SharedSecretSize()) != 0 {
+		clientSecretsCount += 1
+	}
+
+	potp, _ := cfg.GetPotpByID(sharedSecretRequest.PotpIdPreferredAsString())
+	_, otpOffset := potp.PickOTP(32)
+
+	sharedSecretBundleDescResponse = msg.SharedSecretBundleDescriptionResponse{
+		PubKeyIdUsed: clientKey.GetKeyIdAs32Byte(),
+		PotpIdUsed:   potp.GetPotpIdAs32Byte(),
+		PotpOffset:   otpOffset,
+		SecretsCount: uint8(clientSecretsCount),
+		SecretSize:   uint16(kem.CiphertextSize()),
+	}
+	send(t, sharedSecretBundleDescResponse)
+
+	clientSecrets := make([][]byte, clientSecretsCount)
+	for secretNo := 0; secretNo < clientSecretsCount; secretNo++ {
+		clientSecrets[secretNo] = make([]byte, kem.SharedSecretSize())
+		ciphertext := make([]byte, kem.CiphertextSize())
+		err := kem.Encapsulate(ciphertext, clientSecrets[secretNo], serverKey.GetSidhPublicKey())
+		if err != nil {
+			panic(err)
+		}
+		send(t, ciphertext)
+	}
+
+	//recv(t, &sharedSecretBundleDescResponse)
+
 }
 
 // ----- givens ------------------------------------------------------------------------------------------------------
@@ -219,7 +268,13 @@ func givenServerAndClientKeys() {
 	key, _ := cfg.CreateAndAddKey(cryptoutil.KeyTypeSidhFp503) // first key, let's assume it is the server one
 	cfg.ServerKey = key.Uuid
 	key, _ = cfg.CreateAndAddKey(cryptoutil.KeyTypeSidhFp503) // second one, the client
+	cfg.ClientKey = key.Uuid
+}
 
+func givenOtpInConfig() {
+	potp, _ := cfg.CreateInPlacePotp(4096)
+	cfg.ServerPotp = potp.Uuid
+	cfg.ClientPotp = potp.Uuid
 }
 
 func givenPuzzleAnswered(t *testing.T) {
@@ -236,6 +291,11 @@ func givenValidClientHello() {
 		Protocol: msg.ClientHelloProtocol,
 		WireType: msg.ClientHelloWireTypeSimpleAES256,
 	}
+}
+
+func givenClientHelloAnswered(t *testing.T) {
+	givenValidClientHello()
+	send(t, clientHello)
 }
 
 func sendNoise(minimumAmount int) int {
