@@ -125,10 +125,13 @@ func negotiateSharedSecrets(conn net.Conn, cfg *config.Config, clientHello *msg.
 		return clientShare, serverShare, err
 	}
 
-	kemsRequiredPerSide := (calculateTotalKEMsRequired(serverKey.GetKeyType(), clientHello.WireType) + 1) / 2
+	//XXX	kemsRequiredPerSide := (calculateTotalKEMsRequired(serverKey.GetKeyType(), clientHello.WireType) + 1) / 2
 	shrSecretReq := msg.SharedSecretRequest{
-		KeyId:  serverKey.GetKeyIdAs32Byte(),
-		Counts: kemsRequiredPerSide,
+		RequestType:      0,
+		KeyIdPreferred:   serverKey.GetKeyIdAs32Byte(),
+		KeyIdStillValid:  [32]byte{},
+		PotpIdPreferred:  [32]byte{},
+		PotpIdStillValid: [32]byte{},
 	}
 	err = binary.Write(conn, binary.LittleEndian, shrSecretReq)
 	if err != nil {
@@ -139,6 +142,11 @@ func negotiateSharedSecrets(conn net.Conn, cfg *config.Config, clientHello *msg.
 	if err != nil {
 		return clientShare, serverShare, err
 	}
+
+	//serverShare, err = createAndSendSharedSecret(conn, serverKey, clientKey)
+	//if err != nil {
+	//	return clientShare, serverShare, err
+	//}
 
 	//kem, err := serverKey.GetKemSike()
 	//if err != nil {

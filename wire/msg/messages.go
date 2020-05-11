@@ -1,6 +1,8 @@
 package msg
 
-import "encoding/base64"
+import (
+	"encoding/base64"
+)
 
 type DisconnectCause struct {
 	Delimiter uint32
@@ -43,12 +45,18 @@ type PuzzleResponse struct {
 }
 
 type SharedSecretRequest struct {
-	KeyId  [256 / 8]byte
-	Counts uint16
+	RequestType      uint8 // fix=0, fix proposal of keys and Potps, open to make an unbounded list in the future
+	KeyIdPreferred   [256 / 8]byte
+	KeyIdStillValid  [256 / 8]byte
+	PotpIdPreferred  [256 / 8]byte
+	PotpIdStillValid [256 / 8]byte
 }
 
 // Message used in the wire, describes how many 'SecretsCount' of size 'SecretSize' to read.
 type SharedSecretBundleDescriptionResponse struct {
+	PubKeyIdUsed uint8 // 0=preferred, 1=still valid
+	PotpIdUsed   uint8 // ditto
+	PotpOffset   uint64
 	SecretsCount uint8
 	SecretSize   uint16
 }
