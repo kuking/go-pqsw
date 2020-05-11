@@ -8,5 +8,5 @@
 
 .idea
 
-lala
+*.conf
 bin/*
