@@ -1,6 +1,7 @@
 package wire
 
 import (
+	"encoding/base64"
 	"encoding/binary"
 	"fmt"
 	"github.com/google/logger"
@@ -49,13 +50,13 @@ func newClientHandshake(conn net.Conn, cfg *config.Config) {
 		return
 	}
 
-	cliShare, srvShare, err := negotiateSharedSecrets(conn, cfg, clientHello)
-	if terminateHandshakeOnError(conn, err, "negotiating shared secrets") {
+	cliShare, srvShare, serr := negotiateSharedSecrets(conn, cfg, clientHello)
+	if terminateHandshakeOnServerError(conn, serr, "negotiating shared secrets") {
 		return
 	}
-	fmt.Print(cliShare, srvShare)
-
-	// WIP
+	if cliShare == srvShare {
+		fmt.Print("wip")
+	}
 }
 
 func receiveAndVerifyClientHello(conn net.Conn, cfg *config.Config) (*msg.ClientHello, *ServerError) {
@@ -81,8 +82,8 @@ func receiveAndVerifyClientHello(conn net.Conn, cfg *config.Config) (*msg.Client
 	}
 	if !cfg.ContainsKeyById(clientHello.KeyIdAsString()) {
 		return nil, Disconnect(
-			errors.Errorf("keyid not recognized: %v", clientHello.KeyIdAsString()),
-			msg.DisconnectCauseClientKeyNotRecognised)
+			errors.Errorf("counter party keyid not recognized: %v", clientHello.KeyIdAsString()),
+			msg.DisconnectCauseCounterpartyKeyIdNotRecognised)
 	}
 	return &clientHello, nil
 }
@@ -114,84 +115,136 @@ func challengeWithPuzzle(conn net.Conn, cfg *config.Config) (*msg.PuzzleRequest,
 func negotiateSharedSecrets(conn net.Conn, cfg *config.Config, clientHello *msg.ClientHello) (
 	clientShare *msg.SharedSecret,
 	serverShare *msg.SharedSecret,
-	err error) {
+	serr *ServerError) {
+
+	keySize := 256 / 8
+	if clientHello.WireType == msg.ClientHelloWireTypeTripleAES256 {
+		keySize = keySize * 3
+	}
 
 	serverKey, err := cfg.GetKeyByID(cfg.ServerKey)
 	if err != nil {
-		return clientShare, serverShare, errors.Wrap(err, "ServerKey specified by configuration not found")
+		return clientShare, serverShare,
+			Disconnect(errors.Wrap(err, "serverKey specified by configuration not found"), msg.DisconnectCauseSeverMisconfiguration)
 	}
 	clientKey, err := cfg.GetKeyByID(clientHello.KeyIdAsString())
 	if err != nil {
-		return clientShare, serverShare, err
+		// this should never happen has it has been verified by receiveAndVerifyClientHello()
+		return clientShare, serverShare,
+			Disconnect(errors.Wrap(err, "clientKey specified not found"), msg.DisconnectCauseCounterpartyKeyIdNotRecognised)
 	}
 	serverPotp, err := cfg.GetPotpByID(cfg.ServerPotp)
 	if err != nil {
-		return clientShare, serverShare, err
+		return clientShare, serverShare,
+			Disconnect(errors.Wrap(err, "serverPotp specified by configuration not found"), msg.DisconnectCauseSeverMisconfiguration)
 	}
 
 	shrSecretReq := msg.SharedSecretRequest{
-		RequestType:      0,
-		KeyIdPreferred:   serverKey.GetKeyIdAs32Byte(),
-		KeyIdStillValid:  [32]byte{},
-		PotpIdPreferred:  serverPotp.GetPotpIdAs32Byte(),
-		PotpIdStillValid: [32]byte{},
+		RequestType: 0,
+		KeyId:       serverKey.GetKeyIdAs32Byte(),
 	}
 	err = binary.Write(conn, binary.LittleEndian, shrSecretReq)
 	if err != nil {
-		return clientShare, serverShare, err
+		return clientShare, serverShare, Disconnect(err, msg.DisconnectCauseNone)
 	}
 
-	clientShare, err = readSharedSecret(conn, serverKey, clientKey)
-	if err != nil {
-		return clientShare, serverShare, err
+	clientShare, serr = readSharedSecret(conn, serverKey, cfg, keySize)
+	if serr != nil {
+		return clientShare, serverShare, serr
 	}
 
-	//serverShare, err = createAndSendSharedSecret(conn, serverKey, clientKey)
-	//if err != nil {
-	//	return clientShare, serverShare, err
-	//}
+	serverShare, serr = sendSharedSecret(conn, clientKey, serverPotp, keySize)
+	if serr != nil {
+		return clientShare, serverShare, serr
+	}
 
-	//kem, err := serverKey.GetKemSike()
-	//if err != nil {
-	//	return nil, nil, err
-	//}
-
-	//var cipherText = make([]byte, kem.CiphertextSize())
-	//var sharedSecret = make([]byte, kem.SharedSecretSize())
-	//err = kem.Encapsulate(cipherText, sharedSecret, cli)
-	//if err != nil {
-	//	return clientShare, serverShare, err
-	//}
-	//
-	return clientShare, serverShare, err
+	return clientShare, serverShare, nil
 }
 
-func readSharedSecret(conn net.Conn, receiver *config.Key, sender *config.Key) (res *msg.SharedSecret, err error) {
-	bundleDesc := msg.SharedSecretBundleDescriptionResponse{}
-	err = binary.Read(conn, binary.LittleEndian, &bundleDesc)
-	if err != nil {
-		return res, err
+func sendSharedSecret(conn net.Conn, receiver *config.Key, potp *config.Potp, keySize int) (res *msg.SharedSecret, serr *ServerError) {
+	potpBytes, potpOfs := potp.PickOTP(keySize)
+
+	kem, _ := receiver.GetKemSike()
+	secretsCount := keySize / kem.SharedSecretSize()
+	if (keySize % kem.SharedSecretSize()) != 0 {
+		secretsCount += 1
 	}
+
+	fmt.Printf("server sent: otp ofs=%v len=%v val=%v\n", potpOfs, keySize, base64.StdEncoding.EncodeToString(potpBytes))
+
 	res = &msg.SharedSecret{
+		Otp:    potpBytes,
+		Shared: make([][]byte, secretsCount),
+	}
+	bundleDesc := msg.SharedSecretBundleDescriptionResponse{
+		PotpIdUsed:   potp.GetPotpIdAs32Byte(),
+		PotpOffset:   potpOfs,
+		SecretsCount: uint8(secretsCount),
+		SecretSize:   uint16(kem.CiphertextSize()),
+	}
+	err := binary.Write(conn, binary.LittleEndian, &bundleDesc)
+	if err != nil {
+		return res, Disconnect(err, msg.DisconnectCauseNone)
+	}
+
+	for secretNo := 0; secretNo < secretsCount; secretNo++ {
+		res.Shared[secretNo] = make([]byte, kem.SharedSecretSize())
+		ciphertext := make([]byte, kem.CiphertextSize())
+		err = kem.Encapsulate(ciphertext, res.Shared[secretNo], receiver.GetSidhPublicKey())
+		if err != nil {
+			return res, Disconnect(err, msg.DisconnectCauseNone)
+		}
+		err = binary.Write(conn, binary.LittleEndian, ciphertext)
+		if err != nil {
+			return res, Disconnect(err, msg.DisconnectCauseNone)
+		}
+		fmt.Printf("server sent: secret[%v] %v (cipher: %v)\n", secretNo, cryptoutil.EncB64(res.Shared[secretNo]), cryptoutil.EncB64(ciphertext))
+	}
+
+	return res, nil
+}
+
+func readSharedSecret(conn net.Conn, receiver *config.Key, cfg *config.Config, keySize int) (res *msg.SharedSecret, serr *ServerError) {
+	bundleDesc := msg.SharedSecretBundleDescriptionResponse{}
+	err := binary.Read(conn, binary.LittleEndian, &bundleDesc)
+	if err != nil {
+		return res, Disconnect(err, msg.DisconnectCauseNone)
+	}
+
+	otp, err := cfg.GetPotpByID(bundleDesc.PotpIdAsString())
+	if err != nil {
+		return res,
+			Disconnect(errors.WithMessagef(err, "potp provided by not recognised, id=%v", bundleDesc.PotpIdAsString()),
+				msg.DisconnectCausePotpNotRecognised)
+	}
+	otpBytes, err := otp.ReadOTP(keySize, bundleDesc.PotpOffset)
+	if err != nil {
+		return res, Disconnect(err, msg.DisconnectCausePotpNotRecognised)
+	}
+	fmt.Printf("server recv: otp ofs=%v size=%v val=%v\n", bundleDesc.PotpOffset, 32, base64.StdEncoding.EncodeToString(otpBytes))
+
+	res = &msg.SharedSecret{
+		Otp:    otpBytes,
 		Shared: make([][]byte, bundleDesc.SecretsCount),
 	}
 	kem, err := receiver.GetKemSike()
 	if err != nil {
-		return res, err
+		return res, Disconnect(err, msg.DisconnectCauseSeverMisconfiguration)
 	}
 	for count := 0; count < int(bundleDesc.SecretsCount); count++ {
 		cipherText := make([]byte, bundleDesc.SecretSize)
 		res.Shared[count] = make([]byte, kem.SharedSecretSize())
 		err = binary.Read(conn, binary.LittleEndian, cipherText)
 		if err != nil {
-			return res, err
+			return res, Disconnect(err, msg.DisconnectCauseNone)
 		}
-		err = kem.Decapsulate(res.Shared[count], receiver.GetSidhPrivateKey(), sender.GetSidhPublicKey(), cipherText)
+		err = kem.Decapsulate(res.Shared[count], receiver.GetSidhPrivateKey(), receiver.GetSidhPublicKey(), cipherText)
+		fmt.Printf("server recv: secret[%v] %v (cipher: %v)\n", count, cryptoutil.EncB64(res.Shared[count]), cryptoutil.EncB64(cipherText))
 		if err != nil {
-			return res, err
+			return res, Disconnect(err, msg.DisconnectCauseNotEnoughSecurityRequested)
 		}
 	}
-	return res, err
+	return res, nil
 }
 
 func terminateHandshakeOnError(conn net.Conn, err error, explanation string) bool {

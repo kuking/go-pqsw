@@ -2,8 +2,10 @@ package wire
 
 import (
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"github.com/google/logger"
 	"github.com/kuking/go-pqsw/config"
 	"github.com/kuking/go-pqsw/cryptoutil"
@@ -179,7 +181,7 @@ func TestClientHello_UnrecognizedKeyId(t *testing.T) {
 	givenValidClientHello()
 	copy(clientHello.KeyId[5:], []byte{1, 2, 3, 4, 5, 6, 7, 8})
 	send(t, clientHello)
-	assertClosedConnectionWithCause(t, msg.DisconnectCauseClientKeyNotRecognised)
+	assertClosedConnectionWithCause(t, msg.DisconnectCauseCounterpartyKeyIdNotRecognised)
 }
 
 func TestClientHello_SendsAndDisconnects(t *testing.T) {
@@ -227,38 +229,67 @@ func TestSharedSecretRequest_Happy(t *testing.T) {
 		t.Error("sharedSecretRequest.RequestType should be 0, as so far the only version implemented")
 	}
 
+	keySize := 256 / 8
+	if clientHello.WireType == msg.ClientHelloWireTypeTripleAES256 {
+		keySize = keySize * 3
+	}
+
 	serverKey, _ := cfg.GetKeyByID(sharedSecretRequest.KeyIdPreferredAsString())
 	clientKey, _ := cfg.GetKeyByID(cfg.ClientKey)
 	kem, _ := clientKey.GetKemSike()
-	clientSecretsCount := 32 * 1 / kem.SharedSecretSize()
-	if ((32 * 1) % kem.SharedSecretSize()) != 0 {
+	clientSecretsCount := keySize / kem.SharedSecretSize()
+	if (keySize % kem.SharedSecretSize()) != 0 {
 		clientSecretsCount += 1
 	}
 
-	potp, _ := cfg.GetPotpByID(sharedSecretRequest.PotpIdPreferredAsString())
-	_, otpOffset := potp.PickOTP(32)
+	clientPotp, _ := cfg.GetPotpByID(cfg.ClientPotp)
+	potpSize := keySize
+	clientPotpBytes, otpOffset := clientPotp.PickOTP(potpSize)
+	fmt.Printf("client sent: otp ofs=%v size=%v val=%v\n", otpOffset, potpSize, base64.StdEncoding.EncodeToString(clientPotpBytes))
 
 	sharedSecretBundleDescResponse = msg.SharedSecretBundleDescriptionResponse{
-		PubKeyIdUsed: clientKey.GetKeyIdAs32Byte(),
-		PotpIdUsed:   potp.GetPotpIdAs32Byte(),
+		PotpIdUsed:   clientPotp.GetPotpIdAs32Byte(),
 		PotpOffset:   otpOffset,
 		SecretsCount: uint8(clientSecretsCount),
 		SecretSize:   uint16(kem.CiphertextSize()),
 	}
 	send(t, sharedSecretBundleDescResponse)
 
-	clientSecrets := make([][]byte, clientSecretsCount)
+	clientSecret := msg.SharedSecret{
+		Otp:    clientPotpBytes,
+		Shared: make([][]byte, clientSecretsCount),
+	}
 	for secretNo := 0; secretNo < clientSecretsCount; secretNo++ {
-		clientSecrets[secretNo] = make([]byte, kem.SharedSecretSize())
+		clientSecret.Shared[secretNo] = make([]byte, kem.SharedSecretSize())
 		ciphertext := make([]byte, kem.CiphertextSize())
-		err := kem.Encapsulate(ciphertext, clientSecrets[secretNo], serverKey.GetSidhPublicKey())
+		err := kem.Encapsulate(ciphertext, clientSecret.Shared[secretNo], serverKey.GetSidhPublicKey())
 		if err != nil {
 			panic(err)
 		}
 		send(t, ciphertext)
+		fmt.Printf("client sent: secret[%v] %v (cipher: %v)\n", secretNo, cryptoutil.EncB64(clientSecret.Shared[secretNo]), cryptoutil.EncB64(ciphertext))
 	}
 
-	//recv(t, &sharedSecretBundleDescResponse)
+	recv(t, &sharedSecretBundleDescResponse)
+	serverPotp, _ := cfg.GetPotpByID(sharedSecretBundleDescResponse.PotpIdAsString())
+	serverPotpOfs := sharedSecretBundleDescResponse.PotpOffset
+	serverPotpBytes, _ := serverPotp.ReadOTP(keySize, serverPotpOfs)
+	fmt.Printf("client recv: otp ofs=%v len=%v val=%v\n", serverPotpOfs, keySize, cryptoutil.EncB64(serverPotpBytes))
+
+	serverSecret := msg.SharedSecret{
+		Otp:    serverPotpBytes,
+		Shared: make([][]byte, sharedSecretBundleDescResponse.SecretsCount),
+	}
+	for secretNo := 0; secretNo < int(sharedSecretBundleDescResponse.SecretsCount); secretNo++ {
+		ciphertext := make([]byte, sharedSecretBundleDescResponse.SecretSize)
+		serverSecret.Shared[secretNo] = make([]byte, kem.SharedSecretSize())
+		recv(t, &ciphertext)
+		err := kem.Decapsulate(serverSecret.Shared[secretNo], clientKey.GetSidhPrivateKey(), clientKey.GetSidhPublicKey(), ciphertext)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Printf("client recv: secret[%v] %v (cipher: %v)\n", secretNo, cryptoutil.EncB64(serverSecret.Shared[secretNo]), cryptoutil.EncB64(ciphertext))
+	}
 
 }
 
@@ -285,7 +316,7 @@ func givenPuzzleAnswered(t *testing.T) {
 
 func givenValidClientHello() {
 	givenServerAndClientKeys()
-	key, _ := cfg.GetKeyByID(cfg.ServerKey)
+	key, _ := cfg.GetKeyByID(cfg.ClientKey)
 	clientHello = msg.ClientHello{
 		KeyId:    key.GetKeyIdAs32Byte(),
 		Protocol: msg.ClientHelloProtocol,

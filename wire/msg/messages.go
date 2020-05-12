@@ -8,15 +8,14 @@ type DisconnectCause struct {
 }
 
 const (
-	DisconnectCauseDelimiter                     uint32 = 0xdeadbeef
-	DisconnectCauseNone                          uint32 = 0
-	DisconnectCauseProtocolRequestedNotSupported uint32 = 1
-	DisconnectCauseNotEnoughSecurityRequested    uint32 = 2
-	DisconnectCauseClientKeyNotRecognised        uint32 = 3
-	DisconnectCausePotpNotRecognised             uint32 = 4
-	DisconnectCauseServerKeyNotRecognised        uint32 = 5
-	DisconnectCausePuzzleNotSolved               uint32 = 6
-	DisconnectCauseSeverMisconfiguration         uint32 = 7
+	DisconnectCauseDelimiter                      uint32 = 0xdeadbeef
+	DisconnectCauseNone                           uint32 = 0
+	DisconnectCauseProtocolRequestedNotSupported  uint32 = 1
+	DisconnectCauseNotEnoughSecurityRequested     uint32 = 2
+	DisconnectCauseCounterpartyKeyIdNotRecognised uint32 = 3
+	DisconnectCausePotpNotRecognised              uint32 = 4
+	DisconnectCausePuzzleNotSolved                uint32 = 5
+	DisconnectCauseSeverMisconfiguration          uint32 = 6
 
 	SharedSecretRequestTypeKEMAndPotp uint8 = 0
 )
@@ -48,38 +47,22 @@ type PuzzleResponse struct {
 }
 
 type SharedSecretRequest struct {
-	RequestType      uint8 // fix=0, fix proposal of keys and Potps, open to make an unbounded list in the future
-	KeyIdPreferred   [256 / 8]byte
-	KeyIdStillValid  [256 / 8]byte
-	PotpIdPreferred  [256 / 8]byte
-	PotpIdStillValid [256 / 8]byte
+	RequestType uint8 // fix=0, fix proposal of keys and Potps, open to make an unbounded list in the future
+	KeyId       [256 / 8]byte
 }
 
 func (s *SharedSecretRequest) KeyIdPreferredAsString() string {
-	return base64.StdEncoding.EncodeToString(s.KeyIdPreferred[:])
-}
-func (s *SharedSecretRequest) KeyIdStillValidAsString() string {
-	return base64.StdEncoding.EncodeToString(s.KeyIdStillValid[:])
-}
-func (s *SharedSecretRequest) PotpIdPreferredAsString() string {
-	return base64.StdEncoding.EncodeToString(s.PotpIdPreferred[:])
-}
-func (s *SharedSecretRequest) PotpIdStillValidAsString() string {
-	return base64.StdEncoding.EncodeToString(s.PotpIdStillValid[:])
+	return base64.StdEncoding.EncodeToString(s.KeyId[:])
 }
 
 // Message used in the wire, describes how many 'SecretsCount' of size 'SecretSize' to read.
 type SharedSecretBundleDescriptionResponse struct {
-	PubKeyIdUsed [256 / 8]byte
 	PotpIdUsed   [256 / 8]byte
 	PotpOffset   uint64
 	SecretsCount uint8
 	SecretSize   uint16
 }
 
-func (b *SharedSecretBundleDescriptionResponse) PubKeyIdAsString() string {
-	return base64.StdEncoding.EncodeToString(b.PubKeyIdUsed[:])
-}
 func (b *SharedSecretBundleDescriptionResponse) PotpIdAsString() string {
 	return base64.StdEncoding.EncodeToString(b.PotpIdUsed[:])
 }

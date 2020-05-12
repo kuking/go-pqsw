@@ -3,6 +3,7 @@ package cryptoutil
 import (
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 )
 
 type KeyType uint8
@@ -12,9 +13,6 @@ const (
 	KeyTypeInvalid   KeyType = 0
 	KeyTypeSidhFp503 KeyType = 1
 	KeyTypeSidhFp751 KeyType = 2
-
-	KeyTypeSidhFp503KemSize = 16
-	KeyTypeSidhFp751KemSize = 24
 )
 
 var KeyTypeAsString = map[KeyType]string{
@@ -35,4 +33,8 @@ func RandBytes(size int) []byte {
 		panic("could not generate randomness")
 	}
 	return res
+}
+
+func EncB64(b []byte) string {
+	return base64.StdEncoding.EncodeToString(b)
 }
