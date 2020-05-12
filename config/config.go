@@ -112,6 +112,16 @@ func (p *Potp) PickOTP(size int) (otp []byte, offset uint64) {
 	return wholeOtp[ofs.Uint64() : ofs.Uint64()+uint64(size)], ofs.Uint64()
 }
 
+func (p *Potp) ReadOTP(size int, offset uint64) ([]byte, error) {
+	wholeOtp := p.GetBodyAsArray()
+	if len(wholeOtp) < int(offset)+size {
+		return nil, errors.Errorf("ReadOTP for offset=%v size=%v, but it only has %v bytes", offset, size, len(wholeOtp))
+	}
+	res := make([]byte, size)
+	copy(res, wholeOtp[int(offset):int(offset)+size])
+	return res, nil
+}
+
 func (c *Config) CreateAndAddKey(keyType cryptoutil.KeyType) (*Key, error) {
 
 	var pvt *sidh.PrivateKey
