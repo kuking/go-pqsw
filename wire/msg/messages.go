@@ -13,8 +13,10 @@ const (
 	DisconnectCauseProtocolRequestedNotSupported uint32 = 1
 	DisconnectCauseNotEnoughSecurityRequested    uint32 = 2
 	DisconnectCauseClientKeyNotRecognised        uint32 = 3
-	DisconnectCausePuzzleNotSolved               uint32 = 4
-	DisconnectCauseMyMistake                     uint32 = 0xffff
+	DisconnectCausePotpNotRecognised             uint32 = 4
+	DisconnectCauseServerKeyNotRecognised        uint32 = 5
+	DisconnectCausePuzzleNotSolved               uint32 = 6
+	DisconnectCauseSeverMisconfiguration         uint32 = 7
 
 	SharedSecretRequestTypeKEMAndPotp uint8 = 0
 )
@@ -75,6 +77,14 @@ type SharedSecretBundleDescriptionResponse struct {
 	SecretSize   uint16
 }
 
+func (b *SharedSecretBundleDescriptionResponse) PubKeyIdAsString() string {
+	return base64.StdEncoding.EncodeToString(b.PubKeyIdUsed[:])
+}
+func (b *SharedSecretBundleDescriptionResponse) PotpIdAsString() string {
+	return base64.StdEncoding.EncodeToString(b.PotpIdUsed[:])
+}
+
 type SharedSecret struct {
+	Otp    []byte
 	Shared [][]byte
 }
