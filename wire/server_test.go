@@ -229,7 +229,7 @@ func TestSharedSecretRequest_Happy(t *testing.T) {
 		t.Error("sharedSecretRequest.RequestType should be 0, as so far the only version implemented")
 	}
 
-	keySize := 256 / 8
+	keySize := (256 / 8) + (96 / 8)
 	if clientHello.WireType == msg.ClientHelloWireTypeTripleAES256 {
 		keySize = keySize * 3
 	}
@@ -291,6 +291,28 @@ func TestSharedSecretRequest_Happy(t *testing.T) {
 		fmt.Printf("client recv: secret[%v] %v (cipher: %v)\n", secretNo, cryptoutil.EncB64(serverSecret.Shared[secretNo]), cryptoutil.EncB64(ciphertext))
 	}
 
+	keysBytes := mixSharedSecretsForKey(&serverSecret, &clientSecret, keySize)
+	fmt.Printf("client' key: %v\n", cryptoutil.EncB64(keysBytes))
+
+	sw, err := NewSecureWireAES256CGM(keysBytes[0:32], keysBytes[32:32+12], cPipe) // TODO: MISSING Triple AES256
+	if err != nil {
+		t.Errorf("could not stablish secure wire, err=%v", err)
+	}
+	gb := make([]byte, 4)
+	n, err := sw.Read(gb)
+	if n != 4 || err != nil {
+		t.Error("error reading final secure_wire good confirmation")
+	}
+	if gb[0] != 'G' || gb[1] != 'O' || gb[2] != 'O' || gb[3] != 'D' {
+		t.Error("the secure_write good confirmation is not correct")
+	}
+	// FIXME: This last one is not asserted by the server, as it closes connection ASAP
+	n, err = sw.Write([]byte{'G', 'O', 'O', 'D'})
+	if n != 4 || err != nil {
+		t.Error("error writing final secure_wire good confirmation")
+	}
+
+	fmt.Println("Secure Connection was established successfully")
 }
 
 // ----- givens ------------------------------------------------------------------------------------------------------

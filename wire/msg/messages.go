@@ -20,6 +20,8 @@ const (
 	SharedSecretRequestTypeKEMAndPotp uint8 = 0
 )
 
+var SecureWireGoodState = []byte{'G', 'O', 'O', 'D'}
+
 type ClientHello struct {
 	Protocol uint32
 	WireType uint32
@@ -70,4 +72,12 @@ func (b *SharedSecretBundleDescriptionResponse) PotpIdAsString() string {
 type SharedSecret struct {
 	Otp    []byte
 	Shared [][]byte
+}
+
+func (s *SharedSecret) SharesJoined() []byte {
+	res := make([]byte, len(s.Shared)*len(s.Shared[0]))
+	for i := 0; i < len(s.Shared); i++ {
+		res = append(res, s.Shared[i]...)
+	}
+	return res
 }

@@ -38,3 +38,11 @@ func RandBytes(size int) []byte {
 func EncB64(b []byte) string {
 	return base64.StdEncoding.EncodeToString(b)
 }
+
+func ConcatAll(parts ...[]byte) (res []byte) {
+	res = make([]byte, 0)
+	for _, part := range parts {
+		res = append(res, part...)
+	}
+	return res
+}

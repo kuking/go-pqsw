@@ -1,6 +1,7 @@
 package wire
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/binary"
 	"fmt"
@@ -54,9 +55,36 @@ func newClientHandshake(conn net.Conn, cfg *config.Config) {
 	if terminateHandshakeOnServerError(conn, serr, "negotiating shared secrets") {
 		return
 	}
-	if cliShare == srvShare {
-		fmt.Print("wip")
+
+	keySize := keySize(clientHello)
+	keysBytes := mixSharedSecretsForKey(srvShare, cliShare, keySize)
+
+	sw, err := NewSecureWireAES256CGM(keysBytes[0:32], keysBytes[32:32+12], conn)
+	if terminateHandshakeOnError(conn, err, "establishing secure wire") {
+		return
 	}
+
+	fmt.Printf("server' key: %v\n", cryptoutil.EncB64(keysBytes))
+
+	n, err := sw.Write(msg.SecureWireGoodState)
+	if n != len(msg.SecureWireGoodState) || err != nil {
+		err = errors.Wrap(err, "could not write good secure_wire message")
+	}
+	if terminateHandshakeOnError(conn, err, "could not write  secure_wire message") {
+		return
+	}
+
+	goodRead := make([]byte, 4)
+	n, err = sw.Read(goodRead)
+	if n != len(msg.SecureWireGoodState) || bytes.Compare(msg.SecureWireGoodState, goodRead) != 0 {
+		err = errors.New("read good secure_write message invalid")
+	}
+	if terminateHandshakeOnError(conn, err, "could not read good secure_wire message") {
+		return
+	}
+
+	fmt.Println("Server has established a secure connection")
+
 }
 
 func receiveAndVerifyClientHello(conn net.Conn, cfg *config.Config) (*msg.ClientHello, *ServerError) {
@@ -117,10 +145,7 @@ func negotiateSharedSecrets(conn net.Conn, cfg *config.Config, clientHello *msg.
 	serverShare *msg.SharedSecret,
 	serr *ServerError) {
 
-	keySize := 256 / 8
-	if clientHello.WireType == msg.ClientHelloWireTypeTripleAES256 {
-		keySize = keySize * 3
-	}
+	keySize := keySize(clientHello)
 
 	serverKey, err := cfg.GetKeyByID(cfg.ServerKey)
 	if err != nil {
@@ -159,6 +184,23 @@ func negotiateSharedSecrets(conn net.Conn, cfg *config.Config, clientHello *msg.
 	}
 
 	return clientShare, serverShare, nil
+}
+
+func keySize(clientHello *msg.ClientHello) int {
+	keySize := (256 / 8) + (96 / 8)
+	if clientHello.WireType == msg.ClientHelloWireTypeTripleAES256 {
+		keySize = keySize * 3
+	}
+	return keySize
+}
+
+func mixSharedSecretsForKey(serverShare *msg.SharedSecret, clientShare *msg.SharedSecret, keySize int) (res []byte) {
+	allBytes := cryptoutil.ConcatAll(serverShare.SharesJoined(), clientShare.SharesJoined(), serverShare.Otp, clientShare.Otp)
+	res = make([]byte, keySize)
+	for i := 0; i < len(allBytes); i++ {
+		res[i%keySize] = res[i%keySize] ^ allBytes[i]
+	}
+	return res
 }
 
 func sendSharedSecret(conn net.Conn, receiver *config.Key, potp *config.Potp, keySize int) (res *msg.SharedSecret, serr *ServerError) {
