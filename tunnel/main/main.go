@@ -36,7 +36,23 @@ func doParsing() bool {
 	if doHelp {
 		fmt.Printf("Usage of %v: <entry|exit> <[bind_address:]port:host:hostport>\n", os.Args[0])
 		flag.PrintDefaults()
-		fmt.Println("WORK IN PROGRESS - THIS USES A FIXED KEY - COME BACK SOON") //FIXME
+		fmt.Println(`
+NOTES:
+
+entry: accepts plain text traffic, forwarding it securely to the host:hostport i.e. (localhost)$ pqswtun entry localhost:1022:remote:2222
+ exit: takes the encrypted traffic, decrypts it and forwards it to the host:hostport i.e (remote)$ pqswtun exit 2222:localhost:22
+
+A configuration file is required (default: pqswtun.conf) with at least three entries:
+ - a full private/public key for the client
+ - a public key for the host
+ - a pre-shared pragmatic one-time-pad (potp)
+
+For creating a configuration file, use the utility pqswcfg, i.e. $ pqswcfg create vanilla pqswtun.cfg
+the configuration file can be easily copied-and-pasted and manipulated as it is a json file.
+
+By default it will listen to as many connections as possible. Further documentation here: https://github.com/kuking/go-pqsw ")
+
+WORK IN PROGRESS - THIS USES A FIXED KEY - COME BACK SOON`)
 		return false
 	}
 	if flag.NArg() > 2 {
