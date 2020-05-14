@@ -57,7 +57,7 @@ func newClientHandshake(conn net.Conn, cfg *config.Config) {
 		return
 	}
 
-	keySize := keySize(clientHello)
+	keySize := calculateKeySize(clientHello)
 	keysBytes := mixSharedSecretsForKey(srvShare, cliShare, keySize)
 
 	sw, err := NewSecureWireAES256CGM(keysBytes[0:32], keysBytes[32:32+12], conn)
@@ -146,7 +146,7 @@ func negotiateSharedSecrets(conn net.Conn, cfg *config.Config, clientHello *msg.
 	serverShare *msg.SharedSecret,
 	serr *ServerError) {
 
-	keySize := keySize(clientHello)
+	keySize := calculateKeySize(clientHello)
 
 	serverKey, err := cfg.GetKeyByID(cfg.ServerKey)
 	if err != nil {
@@ -191,31 +191,6 @@ func negotiateSharedSecrets(conn net.Conn, cfg *config.Config, clientHello *msg.
 	}
 
 	return clientShare, serverShare, nil
-}
-
-func keySize(clientHello *msg.ClientHello) int {
-	keySize := (256 / 8) + (96 / 8)
-	if clientHello.WireType == msg.ClientHelloWireTypeTripleAES256 {
-		keySize = keySize * 3
-	}
-	return keySize
-}
-
-func mixSharedSecretsForKey(serverShare *msg.SharedSecret, clientShare *msg.SharedSecret, keySize int) (res []byte) {
-	allBytes := cryptoutil.ConcatAll(serverShare.SharesJoined(), clientShare.SharesJoined(), serverShare.Otp, clientShare.Otp)
-	res = make([]byte, keySize)
-	for i := 0; i < len(allBytes); i++ {
-		res[i%keySize] = res[i%keySize] ^ allBytes[i]
-	}
-	return res
-}
-
-func calculateSharedSecretsCount(kem *sidh.KEM, keySize int) int {
-	secretsCount := keySize / kem.SharedSecretSize()
-	if (keySize % kem.SharedSecretSize()) != 0 {
-		secretsCount += 1
-	}
-	return secretsCount
 }
 
 func sendSharedSecret(conn net.Conn, receiver *config.Key, potp *config.Potp, keySize int, kem *sidh.KEM) (res *msg.SharedSecret, serr *ServerError) {
@@ -344,6 +319,33 @@ func terminateHandshakeOnServerError(conn net.Conn, serr *ServerError, explanati
 		}
 	}
 	return terminateHandshakeOnError(conn, serr.err, explanation)
+}
+
+// ------------------------------------------------------------------------------------------------------------------
+
+func mixSharedSecretsForKey(serverShare *msg.SharedSecret, clientShare *msg.SharedSecret, keySize int) (res []byte) {
+	allBytes := cryptoutil.ConcatAll(serverShare.SharesJoined(), clientShare.SharesJoined(), serverShare.Otp, clientShare.Otp)
+	res = make([]byte, keySize)
+	for i := 0; i < len(allBytes); i++ {
+		res[i%keySize] = res[i%keySize] ^ allBytes[i]
+	}
+	return res
+}
+
+func calculateKeySize(clientHello *msg.ClientHello) int {
+	keySize := (256 / 8) + (96 / 8)
+	if clientHello.WireType == msg.ClientHelloWireTypeTripleAES256 {
+		keySize = keySize * 3
+	}
+	return keySize
+}
+
+func calculateSharedSecretsCount(kem *sidh.KEM, keySize int) int {
+	secretsCount := keySize / kem.SharedSecretSize()
+	if (keySize % kem.SharedSecretSize()) != 0 {
+		secretsCount += 1
+	}
+	return secretsCount
 }
 
 // ------------------------------------------------------------------------------------------------------------------
