@@ -284,24 +284,6 @@ func TestSharedSecretRequest_InvalidPotpId(t *testing.T) {
 	assertClosedConnectionWithCause(t, msg.DisconnectCausePotpNotRecognised)
 }
 
-func TestSharedSecretRequest_ValidResponse(t *testing.T) {
-	setup()
-	defer cleanup()
-	givenOtpInConfig()
-	givenPuzzleAnswered(t)
-	givenClientHelloAnswered(t)
-	_, _, clientPotp := givenSharedSecretRequestReceived(t)
-
-	sharedSecretBundleDescResponse = msg.SharedSecretBundleDescriptionResponse{
-		PotpIdUsed:   clientPotp.GetPotpIdAs32Byte(),
-		PotpOffset:   123,
-		SecretsCount: 3,
-		SecretSize:   1,
-	}
-	send(t, sharedSecretBundleDescResponse)
-	assertClosedConnectionWithCause(t, msg.DisconnectCauseNotEnoughSecurityRequested)
-}
-
 func TestSharedSecretRequest_InsufficientSharedSecrets(t *testing.T) {
 	setup()
 	defer cleanup()
@@ -321,20 +303,33 @@ func TestSharedSecretRequest_InsufficientSharedSecrets(t *testing.T) {
 	assertClosedConnectionWithCause(t, msg.DisconnectCauseNotEnoughSecurityRequested)
 }
 
-func calculateKeySizeKemsCountAndKem(clientKey *config.Key) (keySize int, secretsCount int, kem *sidh.KEM) {
-	keySize = (256 / 8) + (96 / 8)
-	if clientHello.WireType == msg.ClientHelloWireTypeTripleAES256 {
-		keySize = keySize * 3
+func TestSharedSecretRequest_EmptyCiphertexts(t *testing.T) {
+	setup()
+	defer cleanup()
+	givenOtpInConfig()
+
+	givenPuzzleAnswered(t)
+	givenClientHelloAnswered(t)
+	_, clientKey, clientPotp := givenSharedSecretRequestReceived(t)
+	_, clientSecretsCount, kem := calculateKeySizeKemsCountAndKem(clientKey)
+
+	sharedSecretBundleDescResponse = msg.SharedSecretBundleDescriptionResponse{
+		PotpIdUsed:   clientPotp.GetPotpIdAs32Byte(),
+		PotpOffset:   0,
+		SecretsCount: uint8(clientSecretsCount),
+		SecretSize:   uint16(kem.CiphertextSize()),
 	}
-	kem, _ = clientKey.GetKemSike()
-	clientSecretsCount := keySize / kem.SharedSecretSize()
-	if (keySize % kem.SharedSecretSize()) != 0 {
-		clientSecretsCount += 1
+	send(t, sharedSecretBundleDescResponse)
+
+	for secretNo := 0; secretNo < clientSecretsCount; secretNo++ {
+		ciphertext := make([]byte, kem.CiphertextSize())
+		send(t, ciphertext)
 	}
-	return keySize, secretsCount, kem
+
+	recv(t, &sharedSecretBundleDescResponse) // implies the server is happy with the message
 }
 
-func TestSharedSecretRequest_Happy(t *testing.T) {
+func TestSharedSecretRequest_HappySharedSecretsSent(t *testing.T) {
 	setup()
 	defer cleanup()
 	givenOtpInConfig()
@@ -342,19 +337,45 @@ func TestSharedSecretRequest_Happy(t *testing.T) {
 	givenPuzzleAnswered(t)
 	givenClientHelloAnswered(t)
 	serverKey, clientKey, clientPotp := givenSharedSecretRequestReceived(t)
+	keySize, clientSecretsCount, kem := calculateKeySizeKemsCountAndKem(clientKey)
+	clientPotpBytes, otpOffset := clientPotp.PickOTP(keySize)
 
-	keySize := (256 / 8) + (96 / 8)
-	if clientHello.WireType == msg.ClientHelloWireTypeTripleAES256 {
-		keySize = keySize * 3
+	sharedSecretBundleDescResponse = msg.SharedSecretBundleDescriptionResponse{
+		PotpIdUsed:   clientPotp.GetPotpIdAs32Byte(),
+		PotpOffset:   otpOffset,
+		SecretsCount: uint8(clientSecretsCount),
+		SecretSize:   uint16(kem.CiphertextSize()),
 	}
-	kem, _ := clientKey.GetKemSike()
-	clientSecretsCount := keySize / kem.SharedSecretSize()
-	if (keySize % kem.SharedSecretSize()) != 0 {
-		clientSecretsCount += 1
+	send(t, sharedSecretBundleDescResponse)
+
+	clientSecret := msg.SharedSecret{
+		Otp:    clientPotpBytes,
+		Shared: make([][]byte, clientSecretsCount),
 	}
-	potpSize := keySize
-	clientPotpBytes, otpOffset := clientPotp.PickOTP(potpSize)
-	fmt.Printf("client sent: otp ofs=%v size=%v val=%v\n", otpOffset, potpSize, base64.StdEncoding.EncodeToString(clientPotpBytes))
+	for secretNo := 0; secretNo < clientSecretsCount; secretNo++ {
+		clientSecret.Shared[secretNo] = make([]byte, kem.SharedSecretSize())
+		ciphertext := make([]byte, kem.CiphertextSize())
+		err := kem.Encapsulate(ciphertext, clientSecret.Shared[secretNo], serverKey.GetSidhPublicKey())
+		if err != nil {
+			panic(err)
+		}
+		send(t, ciphertext)
+	}
+
+	recv(t, &sharedSecretBundleDescResponse) // implies the server is happy with the message
+}
+
+func Test_HappyPath(t *testing.T) {
+	setup()
+	defer cleanup()
+	givenOtpInConfig()
+
+	givenPuzzleAnswered(t)
+	givenClientHelloAnswered(t)
+	serverKey, clientKey, clientPotp := givenSharedSecretRequestReceived(t)
+	keySize, clientSecretsCount, kem := calculateKeySizeKemsCountAndKem(clientKey)
+	clientPotpBytes, otpOffset := clientPotp.PickOTP(keySize)
+	fmt.Printf("client sent: otp ofs=%v size=%v val=%v\n", otpOffset, keySize, base64.StdEncoding.EncodeToString(clientPotpBytes))
 
 	sharedSecretBundleDescResponse = msg.SharedSecretBundleDescriptionResponse{
 		PotpIdUsed:   clientPotp.GetPotpIdAs32Byte(),
@@ -549,4 +570,17 @@ func recv(t *testing.T, msg interface{}) {
 	if err != nil {
 		t.Errorf("Client failed to receive: %v", err)
 	}
+}
+
+func calculateKeySizeKemsCountAndKem(clientKey *config.Key) (keySize int, secretsCount int, kem *sidh.KEM) {
+	keySize = (256 / 8) + (96 / 8)
+	if clientHello.WireType == msg.ClientHelloWireTypeTripleAES256 {
+		keySize = keySize * 3
+	}
+	kem, _ = clientKey.GetKemSike()
+	secretsCount = keySize / kem.SharedSecretSize()
+	if (keySize % kem.SharedSecretSize()) != 0 {
+		secretsCount += 1
+	}
+	return keySize, secretsCount, kem
 }
