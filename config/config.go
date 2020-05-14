@@ -114,8 +114,16 @@ func (p *Potp) PickOTP(size int) (otp []byte, offset uint64) {
 
 func (p *Potp) ReadOTP(size int, offset uint64) ([]byte, error) {
 	wholeOtp := p.GetBodyAsArray()
+	if len(wholeOtp) < int(offset) {
+		//This is important: the offset can be any value, so the length of the potp is not disclosed indirectly
+		//i.e. further improvements to the protocol has to send values greater than the potp's size,
+		//so an eavesdropper can't imply its size.
+		//FIX: fix int vs uint64 but then file based potp are implemented, small/json-config ones will be less than 2gb
+		offset = uint64(int(offset) % len(wholeOtp))
+	}
 	if len(wholeOtp) < int(offset)+size {
-		return nil, errors.Errorf("ReadOTP for offset=%v size=%v, but it only has %v bytes", offset, size, len(wholeOtp))
+		// for the sake of simplicity, so it does not have to pick two parts
+		offset = 0
 	}
 	res := make([]byte, size)
 	copy(res, wholeOtp[int(offset):int(offset)+size])
