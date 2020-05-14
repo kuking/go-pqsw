@@ -253,6 +253,18 @@ func readSharedSecret(conn net.Conn, receiver *config.Key, cfg *config.Config, k
 		return res, Disconnect(err, msg.DisconnectCauseNone)
 	}
 
+	if bundleDesc.SecretSize < 192 || bundleDesc.SecretSize > 256 {
+		return nil, Disconnect(
+			errors.New(fmt.Sprintf("client secret-size our of range (192<=n<=256), received: %v", bundleDesc.SecretSize)),
+			msg.DisconnectCauseNotEnoughSecurityRequested)
+	}
+
+	if bundleDesc.SecretsCount == 0 || bundleDesc.SecretsCount > 10 {
+		return nil, Disconnect(
+			errors.New(fmt.Sprintf("client secret count out of range (0<n=<10), received: %v", bundleDesc.SecretsCount)),
+			msg.DisconnectCauseNotEnoughSecurityRequested)
+	}
+
 	otp, err := cfg.GetPotpByID(bundleDesc.PotpIdAsString())
 	if err != nil {
 		return res,
@@ -306,7 +318,8 @@ func terminateHandshakeOnServerError(conn net.Conn, serr *ServerError, explanati
 		return false
 	}
 	if serr.disconnectCause != msg.DisconnectCauseNone {
-		logger.Infof("remote: '%v' disconnecting with verbose cause: %v", conn.RemoteAddr(), serr.disconnectCause)
+		logger.Infof("remote: '%v' disconnecting with verbose cause: %v (%v)",
+			conn.RemoteAddr(), msg.DisconnectCauseString[serr.disconnectCause], serr.disconnectCause)
 		cause := msg.DisconnectCause{
 			Delimiter: msg.DisconnectCauseDelimiter,
 			Cause:     serr.disconnectCause,

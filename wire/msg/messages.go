@@ -20,6 +20,16 @@ const (
 	SharedSecretRequestTypeKEMAndPotp uint8 = 0
 )
 
+var DisconnectCauseString = map[uint32]string{
+	DisconnectCauseNone:                           "None",
+	DisconnectCauseProtocolRequestedNotSupported:  "Protocol requested not supported",
+	DisconnectCauseNotEnoughSecurityRequested:     "Not enough security Requested",
+	DisconnectCauseCounterpartyKeyIdNotRecognised: "Counter party key not recognised",
+	DisconnectCausePotpNotRecognised:              "Pragmatic one-time-pad (potp) not recognised",
+	DisconnectCausePuzzleNotSolved:                "Puzzle not solved",
+	DisconnectCauseSeverMisconfiguration:          "Server misconfiguration",
+}
+
 var SecureWireGoodState = []byte{'G', 'O', 'O', 'D'}
 
 type ClientHello struct {

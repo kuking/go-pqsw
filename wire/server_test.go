@@ -216,6 +216,102 @@ func TestSharedSecretRequest_Disconnect(t *testing.T) {
 	assertClosedConnection(t)
 }
 
+func TestSharedSecretRequest_EmptyResponse(t *testing.T) {
+	setup()
+	defer cleanup()
+	givenOtpInConfig()
+	givenPuzzleAnswered(t)
+	givenClientHelloAnswered(t)
+	givenSharedSecretRequestReceived(t)
+
+	sharedSecretBundleDescResponse = msg.SharedSecretBundleDescriptionResponse{}
+	send(t, sharedSecretBundleDescResponse)
+
+	assertClosedConnectionWithCause(t, msg.DisconnectCauseNotEnoughSecurityRequested)
+}
+
+func TestSharedSecretRequest_InvalidSecretsCount(t *testing.T) {
+	setup()
+	defer cleanup()
+	givenOtpInConfig()
+	givenPuzzleAnswered(t)
+	givenClientHelloAnswered(t)
+	_, _, clientPotp := givenSharedSecretRequestReceived(t)
+
+	send(t, msg.SharedSecretBundleDescriptionResponse{
+		PotpIdUsed:   clientPotp.GetPotpIdAs32Byte(),
+		PotpOffset:   123,
+		SecretsCount: 0,
+		SecretSize:   200,
+	})
+	assertClosedConnectionWithCause(t, msg.DisconnectCauseNotEnoughSecurityRequested)
+}
+
+func TestSharedSecretRequest_InvalidSecretSize(t *testing.T) {
+	setup()
+	defer cleanup()
+	givenOtpInConfig()
+	givenPuzzleAnswered(t)
+	givenClientHelloAnswered(t)
+	_, _, clientPotp := givenSharedSecretRequestReceived(t)
+
+	sharedSecretBundleDescResponse = msg.SharedSecretBundleDescriptionResponse{
+		PotpIdUsed:   clientPotp.GetPotpIdAs32Byte(),
+		PotpOffset:   123,
+		SecretsCount: 3,
+		SecretSize:   1,
+	}
+	send(t, sharedSecretBundleDescResponse)
+	assertClosedConnectionWithCause(t, msg.DisconnectCauseNotEnoughSecurityRequested)
+}
+
+func TestSharedSecretRequest_InvalidPotpId(t *testing.T) {
+	setup()
+	defer cleanup()
+	givenOtpInConfig()
+	givenPuzzleAnswered(t)
+	givenClientHelloAnswered(t)
+	givenSharedSecretRequestReceived(t)
+
+	sharedSecretBundleDescResponse = msg.SharedSecretBundleDescriptionResponse{
+		PotpIdUsed:   [32]byte{},
+		PotpOffset:   123,
+		SecretsCount: 3,
+		SecretSize:   200,
+	}
+	send(t, sharedSecretBundleDescResponse)
+	assertClosedConnectionWithCause(t, msg.DisconnectCausePotpNotRecognised)
+}
+
+func TestSharedSecretRequest_ValidResponse(t *testing.T) {
+	setup()
+	defer cleanup()
+	givenOtpInConfig()
+	givenPuzzleAnswered(t)
+	givenClientHelloAnswered(t)
+	_, _, clientPotp := givenSharedSecretRequestReceived(t)
+
+	sharedSecretBundleDescResponse = msg.SharedSecretBundleDescriptionResponse{
+		PotpIdUsed:   clientPotp.GetPotpIdAs32Byte(),
+		PotpOffset:   123,
+		SecretsCount: 3,
+		SecretSize:   1,
+	}
+	send(t, sharedSecretBundleDescResponse)
+	assertClosedConnectionWithCause(t, msg.DisconnectCauseNotEnoughSecurityRequested)
+
+}
+
+//keySize := (256 / 8) + (96 / 8)
+//if clientHello.WireType == msg.ClientHelloWireTypeTripleAES256 {
+//	keySize = keySize * 3
+//}
+//kem, _ := clientKey.GetKemSike()
+//clientSecretsCount := keySize / kem.SharedSecretSize()
+//if (keySize % kem.SharedSecretSize()) != 0 {
+//	clientSecretsCount += 1
+//}
+
 func TestSharedSecretRequest_Happy(t *testing.T) {
 	setup()
 	defer cleanup()
@@ -223,26 +319,17 @@ func TestSharedSecretRequest_Happy(t *testing.T) {
 
 	givenPuzzleAnswered(t)
 	givenClientHelloAnswered(t)
-
-	recv(t, &sharedSecretRequest)
-	if sharedSecretRequest.RequestType != msg.SharedSecretRequestTypeKEMAndPotp {
-		t.Error("sharedSecretRequest.RequestType should be 0, as so far the only version implemented")
-	}
+	serverKey, clientKey, clientPotp := givenSharedSecretRequestReceived(t)
 
 	keySize := (256 / 8) + (96 / 8)
 	if clientHello.WireType == msg.ClientHelloWireTypeTripleAES256 {
 		keySize = keySize * 3
 	}
-
-	serverKey, _ := cfg.GetKeyByID(sharedSecretRequest.KeyIdPreferredAsString())
-	clientKey, _ := cfg.GetKeyByID(cfg.ClientKey)
 	kem, _ := clientKey.GetKemSike()
 	clientSecretsCount := keySize / kem.SharedSecretSize()
 	if (keySize % kem.SharedSecretSize()) != 0 {
 		clientSecretsCount += 1
 	}
-
-	clientPotp, _ := cfg.GetPotpByID(cfg.ClientPotp)
 	potpSize := keySize
 	clientPotpBytes, otpOffset := clientPotp.PickOTP(potpSize)
 	fmt.Printf("client sent: otp ofs=%v size=%v val=%v\n", otpOffset, potpSize, base64.StdEncoding.EncodeToString(clientPotpBytes))
@@ -351,6 +438,17 @@ func givenClientHelloAnswered(t *testing.T) {
 	send(t, clientHello)
 }
 
+func givenSharedSecretRequestReceived(t *testing.T) (serverKey *config.Key, clientKey *config.Key, clientPotp *config.Potp) {
+	recv(t, &sharedSecretRequest)
+	if sharedSecretRequest.RequestType != msg.SharedSecretRequestTypeKEMAndPotp {
+		t.Error("sharedSecretRequest.RequestType should be 0, as so far the only version implemented")
+	}
+	serverKey, _ = cfg.GetKeyByID(sharedSecretRequest.KeyIdPreferredAsString())
+	clientKey, _ = cfg.GetKeyByID(cfg.ClientKey)
+	clientPotp, _ = cfg.GetPotpByID(cfg.ClientPotp)
+	return serverKey, clientKey, clientPotp
+}
+
 func sendNoise(minimumAmount int) int {
 	// it sends multiples of 32 bytes, no need to be precise with this
 	var bunch [32]byte
@@ -386,7 +484,9 @@ func assertClosedConnectionWithCause(t *testing.T, reason uint32) {
 		t.Fatal("server did not send the right disconnect delimiter")
 	}
 	if disconnectReason.Cause != reason {
-		t.Fatalf("expected disconnect cause %d, but got intead %d", reason, disconnectReason.Cause)
+		t.Fatalf("expected disconnect cause: %v (%d), but got intead: %v (%d)",
+			msg.DisconnectCauseString[reason], reason,
+			msg.DisconnectCauseString[disconnectReason.Cause], disconnectReason.Cause)
 	}
 	assertClosedConnection(t)
 }
