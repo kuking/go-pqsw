@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"fmt"
+	"github.com/cloudflare/circl/dh/sidh"
 	"github.com/google/logger"
 	"github.com/kuking/go-pqsw/config"
 	"github.com/kuking/go-pqsw/cryptoutil"
@@ -173,12 +174,18 @@ func negotiateSharedSecrets(conn net.Conn, cfg *config.Config, clientHello *msg.
 		return clientShare, serverShare, Disconnect(err, msg.DisconnectCauseNone)
 	}
 
-	clientShare, serr = readSharedSecret(conn, serverKey, cfg, keySize)
+	kem, err := serverKey.GetKemSike()
+	if err != nil {
+		return clientShare, serverShare,
+			Disconnect(errors.Wrap(err, "could not generate kem using server key"), msg.DisconnectCauseSeverMisconfiguration)
+	}
+
+	clientShare, serr = readSharedSecret(conn, serverKey, cfg, keySize, kem)
 	if serr != nil {
 		return clientShare, serverShare, serr
 	}
 
-	serverShare, serr = sendSharedSecret(conn, clientKey, serverPotp, keySize)
+	serverShare, serr = sendSharedSecret(conn, clientKey, serverPotp, keySize, kem)
 	if serr != nil {
 		return clientShare, serverShare, serr
 	}
@@ -203,14 +210,18 @@ func mixSharedSecretsForKey(serverShare *msg.SharedSecret, clientShare *msg.Shar
 	return res
 }
 
-func sendSharedSecret(conn net.Conn, receiver *config.Key, potp *config.Potp, keySize int) (res *msg.SharedSecret, serr *ServerError) {
-	potpBytes, potpOfs := potp.PickOTP(keySize)
-
-	kem, _ := receiver.GetKemSike()
+func calculateSharedSecretsCount(kem *sidh.KEM, keySize int) int {
 	secretsCount := keySize / kem.SharedSecretSize()
 	if (keySize % kem.SharedSecretSize()) != 0 {
 		secretsCount += 1
 	}
+	return secretsCount
+}
+
+func sendSharedSecret(conn net.Conn, receiver *config.Key, potp *config.Potp, keySize int, kem *sidh.KEM) (res *msg.SharedSecret, serr *ServerError) {
+	potpBytes, potpOfs := potp.PickOTP(keySize)
+
+	secretsCount := calculateSharedSecretsCount(kem, keySize)
 
 	fmt.Printf("server sent: otp ofs=%v len=%v val=%v\n", potpOfs, keySize, base64.StdEncoding.EncodeToString(potpBytes))
 
@@ -246,22 +257,29 @@ func sendSharedSecret(conn net.Conn, receiver *config.Key, potp *config.Potp, ke
 	return res, nil
 }
 
-func readSharedSecret(conn net.Conn, receiver *config.Key, cfg *config.Config, keySize int) (res *msg.SharedSecret, serr *ServerError) {
+func readSharedSecret(conn net.Conn, receiver *config.Key, cfg *config.Config, keySize int, kem *sidh.KEM) (res *msg.SharedSecret, serr *ServerError) {
 	bundleDesc := msg.SharedSecretBundleDescriptionResponse{}
 	err := binary.Read(conn, binary.LittleEndian, &bundleDesc)
 	if err != nil {
 		return res, Disconnect(err, msg.DisconnectCauseNone)
 	}
 
-	if bundleDesc.SecretSize < 192 || bundleDesc.SecretSize > 256 {
+	if bundleDesc.SecretSize < 402 || bundleDesc.SecretSize > 596 {
 		return nil, Disconnect(
-			errors.New(fmt.Sprintf("client secret-size our of range (192<=n<=256), received: %v", bundleDesc.SecretSize)),
+			errors.New(fmt.Sprintf("client secret-size our of range (402<=n<=596), received: %v", bundleDesc.SecretSize)),
 			msg.DisconnectCauseNotEnoughSecurityRequested)
 	}
 
 	if bundleDesc.SecretsCount == 0 || bundleDesc.SecretsCount > 10 {
 		return nil, Disconnect(
 			errors.New(fmt.Sprintf("client secret count out of range (0<n=<10), received: %v", bundleDesc.SecretsCount)),
+			msg.DisconnectCauseNotEnoughSecurityRequested)
+	}
+
+	secretsCount := calculateSharedSecretsCount(kem, keySize)
+	if int(bundleDesc.SecretsCount) != secretsCount {
+		return nil, Disconnect(
+			errors.New(fmt.Sprintf("client secret count out invalid, for current keys it should be: %v, received: %v", secretsCount, bundleDesc.SecretsCount)),
 			msg.DisconnectCauseNotEnoughSecurityRequested)
 	}
 
@@ -280,10 +298,6 @@ func readSharedSecret(conn net.Conn, receiver *config.Key, cfg *config.Config, k
 	res = &msg.SharedSecret{
 		Otp:    otpBytes,
 		Shared: make([][]byte, bundleDesc.SecretsCount),
-	}
-	kem, err := receiver.GetKemSike()
-	if err != nil {
-		return res, Disconnect(err, msg.DisconnectCauseSeverMisconfiguration)
 	}
 	for count := 0; count < int(bundleDesc.SecretsCount); count++ {
 		cipherText := make([]byte, bundleDesc.SecretSize)

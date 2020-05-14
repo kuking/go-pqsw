@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"github.com/cloudflare/circl/dh/sidh"
 	"github.com/google/logger"
 	"github.com/kuking/go-pqsw/config"
 	"github.com/kuking/go-pqsw/cryptoutil"
@@ -277,7 +278,7 @@ func TestSharedSecretRequest_InvalidPotpId(t *testing.T) {
 		PotpIdUsed:   [32]byte{},
 		PotpOffset:   123,
 		SecretsCount: 3,
-		SecretSize:   200,
+		SecretSize:   500,
 	}
 	send(t, sharedSecretBundleDescResponse)
 	assertClosedConnectionWithCause(t, msg.DisconnectCausePotpNotRecognised)
@@ -299,18 +300,39 @@ func TestSharedSecretRequest_ValidResponse(t *testing.T) {
 	}
 	send(t, sharedSecretBundleDescResponse)
 	assertClosedConnectionWithCause(t, msg.DisconnectCauseNotEnoughSecurityRequested)
-
 }
 
-//keySize := (256 / 8) + (96 / 8)
-//if clientHello.WireType == msg.ClientHelloWireTypeTripleAES256 {
-//	keySize = keySize * 3
-//}
-//kem, _ := clientKey.GetKemSike()
-//clientSecretsCount := keySize / kem.SharedSecretSize()
-//if (keySize % kem.SharedSecretSize()) != 0 {
-//	clientSecretsCount += 1
-//}
+func TestSharedSecretRequest_InsufficientSharedSecrets(t *testing.T) {
+	setup()
+	defer cleanup()
+	givenOtpInConfig()
+	givenPuzzleAnswered(t)
+	givenClientHelloAnswered(t)
+
+	_, clientKey, clientPotp := givenSharedSecretRequestReceived(t)
+	_, kemsCount, kem := calculateKeySizeKemsCountAndKem(clientKey)
+	send(t, msg.SharedSecretBundleDescriptionResponse{
+		PotpIdUsed:   clientPotp.GetPotpIdAs32Byte(),
+		PotpOffset:   123,
+		SecretsCount: uint8(kemsCount + 1),
+		SecretSize:   uint16(kem.CiphertextSize()),
+	})
+
+	assertClosedConnectionWithCause(t, msg.DisconnectCauseNotEnoughSecurityRequested)
+}
+
+func calculateKeySizeKemsCountAndKem(clientKey *config.Key) (keySize int, secretsCount int, kem *sidh.KEM) {
+	keySize = (256 / 8) + (96 / 8)
+	if clientHello.WireType == msg.ClientHelloWireTypeTripleAES256 {
+		keySize = keySize * 3
+	}
+	kem, _ = clientKey.GetKemSike()
+	clientSecretsCount := keySize / kem.SharedSecretSize()
+	if (keySize % kem.SharedSecretSize()) != 0 {
+		clientSecretsCount += 1
+	}
+	return keySize, secretsCount, kem
+}
 
 func TestSharedSecretRequest_Happy(t *testing.T) {
 	setup()
