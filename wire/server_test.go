@@ -1,6 +1,7 @@
 package wire
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/binary"
@@ -243,7 +244,7 @@ func TestSharedSecretRequest_InvalidSecretsCount(t *testing.T) {
 		PotpIdUsed:   clientPotp.GetPotpIdAs32Byte(),
 		PotpOffset:   123,
 		SecretsCount: 0,
-		SecretSize:   200,
+		SecretSize:   500,
 	})
 	assertClosedConnectionWithCause(t, msg.DisconnectCauseNotEnoughSecurityRequested)
 }
@@ -329,40 +330,69 @@ func TestSharedSecretRequest_EmptyCiphertexts(t *testing.T) {
 	recv(t, &sharedSecretBundleDescResponse) // implies the server is happy with the message
 }
 
-func TestSharedSecretRequest_HappySharedSecretsSent(t *testing.T) {
+func TestShareSecretRequest_ClientSendsRandomSizeKem(t *testing.T) {
+	//TODO
+}
+
+func TestShareSecretRequest_ClientSendsNoiseKemItShouldNotPanic(t *testing.T) {
+	//TODO
+}
+
+func TestSharedSecretRequest_ClientSendsSharedSecretServerACK(t *testing.T) {
 	setup()
 	defer cleanup()
 	givenOtpInConfig()
-
 	givenPuzzleAnswered(t)
 	givenClientHelloAnswered(t)
 	serverKey, clientKey, clientPotp := givenSharedSecretRequestReceived(t)
-	keySize, clientSecretsCount, kem := calculateKeySizeKemsCountAndKem(clientKey)
-	clientPotpBytes, otpOffset := clientPotp.PickOTP(keySize)
 
-	sharedSecretBundleDescResponse = msg.SharedSecretBundleDescriptionResponse{
-		PotpIdUsed:   clientPotp.GetPotpIdAs32Byte(),
-		PotpOffset:   otpOffset,
-		SecretsCount: uint8(clientSecretsCount),
-		SecretSize:   uint16(kem.CiphertextSize()),
-	}
-	send(t, sharedSecretBundleDescResponse)
+	givenClientSendsSharedSecret(t, clientKey, serverKey, clientPotp)
+	recv(t, &sharedSecretBundleDescResponse) // implies the server is happy with the message
+}
 
-	clientSecret := msg.SharedSecret{
-		Otp:    clientPotpBytes,
-		Shared: make([][]byte, clientSecretsCount),
-	}
-	for secretNo := 0; secretNo < clientSecretsCount; secretNo++ {
-		clientSecret.Shared[secretNo] = make([]byte, kem.SharedSecretSize())
-		ciphertext := make([]byte, kem.CiphertextSize())
-		err := kem.Encapsulate(ciphertext, clientSecret.Shared[secretNo], serverKey.GetSidhPublicKey())
-		if err != nil {
-			panic(err)
-		}
-		send(t, ciphertext)
-	}
+func TestSharedSecretRequest_ClientAndServerExchangeSharedSecret(t *testing.T) {
+	setup()
+	defer cleanup()
+	givenOtpInConfig()
+	givenPuzzleAnswered(t)
+	givenClientHelloAnswered(t)
+	serverKey, clientKey, clientPotp := givenSharedSecretRequestReceived(t)
+
+	givenClientSendsSharedSecret(t, clientKey, serverKey, clientPotp)
 
 	recv(t, &sharedSecretBundleDescResponse) // implies the server is happy with the message
+	ciphertext := make([]byte, sharedSecretBundleDescResponse.SecretSize)
+	kem, _ := clientKey.GetKemSike()
+	if kem.CiphertextSize() != len(ciphertext) {
+		t.Error("secret size sent by server is wrong")
+	}
+	for i := 0; i < int(sharedSecretBundleDescResponse.SecretsCount); i++ {
+		recv(t, ciphertext)
+		err := kem.Decapsulate(ciphertext, clientKey.GetSidhPrivateKey(), serverKey.GetSidhPublicKey(), ciphertext)
+		if err != nil {
+			t.Error("kem failed to decapsulate", err)
+		}
+	}
+	assertConnectionStillOpen(t)
+}
+
+func Test_SecureWireSetup(t *testing.T) {
+	setup()
+	defer cleanup()
+	givenOtpInConfig()
+	givenPuzzleAnswered(t)
+	givenClientHelloAnswered(t)
+	serverKey, clientKey, clientPotp := givenSharedSecretRequestReceived(t)
+
+	clientShare := givenClientSendsSharedSecret(t, clientKey, serverKey, clientPotp)
+	keySize := len(clientShare.Otp) // otp size will be the same as keySize, .. so far
+	serverShare := givenServerSendsSharedSecret(t, clientKey, clientPotp, keySize)
+
+	sharedKey := mixSharedSecretsForKey(serverShare, clientShare, keySize) // FIXME: method is not being tested ...
+	_, err := NewSecureWireAES256CGM(sharedKey[0:32], sharedKey[32:32+12], cPipe)
+	if err != nil {
+		t.Errorf("could not establish secure_wire, error=%v", err)
+	}
 }
 
 func Test_HappyPath(t *testing.T) {
@@ -515,6 +545,65 @@ func sendNoise(minimumAmount int) int {
 		logger.Infof("SendNoise finished due to %v", err)
 	}
 	return count
+}
+
+func givenClientSendsSharedSecret(t *testing.T, clientKey *config.Key, serverKey *config.Key, clientPotp *config.Potp) *msg.SharedSecret {
+	keySize, clientSecretsCount, kem := calculateKeySizeKemsCountAndKem(clientKey)
+	clientPotpBytes, otpOffset := clientPotp.PickOTP(keySize)
+
+	sharedSecretBundleDescResponse = msg.SharedSecretBundleDescriptionResponse{
+		PotpIdUsed:   clientPotp.GetPotpIdAs32Byte(),
+		PotpOffset:   otpOffset,
+		SecretsCount: uint8(clientSecretsCount),
+		SecretSize:   uint16(kem.CiphertextSize()),
+	}
+	send(t, sharedSecretBundleDescResponse)
+
+	clientSecret := msg.SharedSecret{
+		Otp:    clientPotpBytes,
+		Shared: make([][]byte, clientSecretsCount),
+	}
+	for secretNo := 0; secretNo < clientSecretsCount; secretNo++ {
+		clientSecret.Shared[secretNo] = make([]byte, kem.SharedSecretSize())
+		ciphertext := make([]byte, kem.CiphertextSize())
+		err := kem.Encapsulate(ciphertext, clientSecret.Shared[secretNo], serverKey.GetSidhPublicKey())
+		if err != nil {
+			panic(err)
+		}
+		send(t, ciphertext)
+	}
+	return &clientSecret
+}
+
+func givenServerSendsSharedSecret(t *testing.T, clientKey *config.Key, potp *config.Potp, keySize int) *msg.SharedSecret {
+	recv(t, &sharedSecretBundleDescResponse)
+	clientPotpId := potp.GetPotpIdAs32Byte()
+	if !bytes.Equal(sharedSecretBundleDescResponse.PotpIdUsed[:], clientPotpId[:]) {
+		t.Error("Server is asking to use another potp ... which MIGHT be fine, but it is not implemented so far, it should not")
+	}
+	potpBytes, err := potp.ReadOTP(keySize, sharedSecretBundleDescResponse.PotpOffset)
+	if err != nil {
+		t.Errorf("Failed to retrieve potp bytes, err=%v", err)
+	}
+	sharedSecret := msg.SharedSecret{
+		Otp:    potpBytes,
+		Shared: make([][]byte, sharedSecretBundleDescResponse.SecretsCount),
+	}
+
+	ciphertext := make([]byte, sharedSecretBundleDescResponse.SecretSize)
+	kem, _ := clientKey.GetKemSike()
+	if kem.CiphertextSize() != len(ciphertext) {
+		t.Error("secret size sent by server is wrong")
+	}
+	for i := 0; i < int(sharedSecretBundleDescResponse.SecretsCount); i++ {
+		recv(t, ciphertext)
+		sharedSecret.Shared[i] = make([]byte, kem.SharedSecretSize())
+		err := kem.Decapsulate(sharedSecret.Shared[i], clientKey.GetSidhPrivateKey(), clientKey.GetSidhPublicKey(), ciphertext)
+		if err != nil {
+			t.Error("kem failed to decapsulate", err)
+		}
+	}
+	return &sharedSecret
 }
 
 // ----------- common assertions -------------------------------------------------------------------------------------

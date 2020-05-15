@@ -220,7 +220,7 @@ func sendSharedSecret(conn net.Conn, receiver *config.Key, potp *config.Potp, ke
 		ciphertext := make([]byte, kem.CiphertextSize())
 		err = kem.Encapsulate(ciphertext, res.Shared[secretNo], receiver.GetSidhPublicKey())
 		if err != nil {
-			return res, Disconnect(err, msg.DisconnectCauseNone)
+			return res, Disconnect(err, msg.DisconnectCauseSeverMisconfiguration)
 		}
 		err = binary.Write(conn, binary.LittleEndian, ciphertext)
 		if err != nil {
@@ -266,7 +266,7 @@ func readSharedSecret(conn net.Conn, receiver *config.Key, cfg *config.Config, k
 	}
 	otpBytes, err := otp.ReadOTP(keySize, bundleDesc.PotpOffset)
 	if err != nil {
-		return res, Disconnect(err, msg.DisconnectCausePotpNotRecognised)
+		return res, Disconnect(err, msg.DisconnectCauseSeverMisconfiguration)
 	}
 	fmt.Printf("server recv: otp ofs=%v size=%v val=%v\n", bundleDesc.PotpOffset, 32, base64.StdEncoding.EncodeToString(otpBytes))
 
