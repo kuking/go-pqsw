@@ -66,26 +66,32 @@ func newClientHandshake(conn net.Conn, cfg *config.Config) {
 	}
 
 	fmt.Printf("server' key: %v\n", cryptoutil.EncB64(keysBytes))
-
-	n, err := sw.Write(msg.SecureWireGoodState)
-	if n != len(msg.SecureWireGoodState) || err != nil {
-		err = errors.Wrap(err, "could not write good secure_wire message")
-	}
-	if terminateHandshakeOnError(conn, err, "could not write  secure_wire message") {
-		return
-	}
-
-	goodRead := make([]byte, 4)
-	n, err = sw.Read(goodRead)
-	if n != len(msg.SecureWireGoodState) || bytes.Compare(msg.SecureWireGoodState, goodRead) != 0 {
-		err = errors.New("read good secure_write message invalid")
-	}
-	if terminateHandshakeOnError(conn, err, "could not read good secure_wire message") {
+	serr = handshakeOverSecureWire(sw)
+	if terminateHandshakeOnServerError(conn, serr, "while handshaking over secure_wire") {
 		return
 	}
 
 	fmt.Println("Server has established a secure connection")
 
+}
+
+func handshakeOverSecureWire(sw *SecureWire) *ServerError {
+	n, err := sw.Write(msg.SecureWireGoodState)
+	if n != len(msg.SecureWireGoodState) {
+		err = errors.New("could not write good secure_wire message")
+	}
+	if err != nil {
+		return Disconnect(err, msg.DisconnectCauseNone)
+	}
+	goodRead := make([]byte, 4)
+	n, err = sw.Read(goodRead)
+	if n != len(msg.SecureWireGoodState) || bytes.Compare(msg.SecureWireGoodState, goodRead) != 0 {
+		err = errors.New("read good secure_write message invalid")
+	}
+	if err != nil {
+		return Disconnect(err, msg.DisconnectCauseNone)
+	}
+	return nil
 }
 
 func receiveAndVerifyClientHello(conn net.Conn, cfg *config.Config) (*msg.ClientHello, *ServerError) {
