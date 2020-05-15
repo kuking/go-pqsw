@@ -239,9 +239,10 @@ func readSharedSecret(conn net.Conn, receiver *config.Key, cfg *config.Config, k
 		return res, Disconnect(err, msg.DisconnectCauseNone)
 	}
 
-	if bundleDesc.SecretSize < 402 || bundleDesc.SecretSize > 596 {
+	if int(bundleDesc.SecretSize) != kem.CiphertextSize() {
 		return nil, Disconnect(
-			errors.New(fmt.Sprintf("client secret-size our of range (402<=n<=596), received: %v", bundleDesc.SecretSize)),
+			errors.New(fmt.Sprintf("client secret-size not the expected to be provided=%v, expected=%v",
+				bundleDesc.SecretSize, kem.CiphertextSize())),
 			msg.DisconnectCauseNotEnoughSecurityRequested)
 	}
 

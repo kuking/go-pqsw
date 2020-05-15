@@ -247,24 +247,6 @@ func TestSharedSecretRequest_InvalidSecretsCount(t *testing.T) {
 	assertClosedConnectionWithCause(t, msg.DisconnectCauseNotEnoughSecurityRequested)
 }
 
-func TestSharedSecretRequest_InvalidSecretSize(t *testing.T) {
-	setup()
-	defer cleanup()
-	givenOtpInConfig()
-	givenPuzzleAnswered(t)
-	givenClientHelloAnswered(t)
-	_, _, clientPotp := givenSharedSecretRequestReceived(t)
-
-	sharedSecretBundleDescResponse = msg.SharedSecretBundleDescriptionResponse{
-		PotpIdUsed:   clientPotp.GetPotpIdAs32Byte(),
-		PotpOffset:   123,
-		SecretsCount: 3,
-		SecretSize:   1,
-	}
-	send(t, sharedSecretBundleDescResponse)
-	assertClosedConnectionWithCause(t, msg.DisconnectCauseNotEnoughSecurityRequested)
-}
-
 func TestSharedSecretRequest_InvalidPotpId(t *testing.T) {
 	setup()
 	defer cleanup()
@@ -277,7 +259,7 @@ func TestSharedSecretRequest_InvalidPotpId(t *testing.T) {
 		PotpIdUsed:   [32]byte{},
 		PotpOffset:   123,
 		SecretsCount: 3,
-		SecretSize:   500,
+		SecretSize:   402,
 	}
 	send(t, sharedSecretBundleDescResponse)
 	assertClosedConnectionWithCause(t, msg.DisconnectCausePotpNotRecognised)
@@ -328,12 +310,37 @@ func TestSharedSecretRequest_EmptyCiphertexts(t *testing.T) {
 	recv(t, &sharedSecretBundleDescResponse) // implies the server is happy with the message
 }
 
-func TestShareSecretRequest_ClientSendsRandomSizeKem(t *testing.T) {
-	//TODO
+func TestShareSecretRequest_ClientSendsInvalidSizeKem(t *testing.T) {
+	setup()
+	defer cleanup()
+	givenOtpInConfig()
+
+	givenPuzzleAnswered(t)
+	givenClientHelloAnswered(t)
+	_, clientKey, clientPotp := givenSharedSecretRequestReceived(t)
+	_, clientSecretsCount, kem := calculateKeySizeKemsCountAndKem(clientKey)
+
+	sharedSecretBundleDescResponse = msg.SharedSecretBundleDescriptionResponse{
+		PotpIdUsed:   clientPotp.GetPotpIdAs32Byte(),
+		PotpOffset:   0,
+		SecretsCount: uint8(clientSecretsCount),
+		SecretSize:   uint16(kem.CiphertextSize() + 25),
+	}
+
+	send(t, sharedSecretBundleDescResponse)
+	assertClosedConnectionWithCause(t, msg.DisconnectCauseNotEnoughSecurityRequested)
 }
 
 func TestShareSecretRequest_ClientSendsNoiseKemItShouldNotPanic(t *testing.T) {
-	//TODO
+	setup()
+	defer cleanup()
+	givenOtpInConfig()
+
+	givenPuzzleAnswered(t)
+	givenClientHelloAnswered(t)
+	givenSharedSecretRequestReceived(t)
+	sendNoise(10000)
+	assertClosedConnectionWithCause(t, msg.DisconnectCauseNotEnoughSecurityRequested)
 }
 
 func TestSharedSecretRequest_ClientSendsSharedSecretServerACK(t *testing.T) {
@@ -405,13 +412,15 @@ func Test_SecureWriteGoodMessageInvalid(t *testing.T) {
 	serverShare := givenServerSendsSharedSecret(t, clientKey, clientPotp, keySize)
 	sharedKey := mixSharedSecretsForKey(serverShare, clientShare, keySize)
 	sw, err := NewSecureWireAES256CGM(sharedKey[0:32], sharedKey[32:32+12], cPipe)
-
+	if err != nil {
+		t.Error(err)
+	}
 	gb := make([]byte, 4)
 	n, err := sw.Read(gb)
 	if n != 4 || err != nil || !bytes.Equal(gb[:], []byte{'G', 'O', 'O', 'D'}) {
 		t.Error("error reading final secure_wire good confirmation")
 	}
-	sw.Write([]byte{'N', 'O', 'G', 'O', 'O', 'D'})
+	_, _ = sw.Write([]byte{'N', 'O', 'G', 'O', 'O', 'D'})
 	assertClosedConnection(t)
 }
 
@@ -427,13 +436,15 @@ func Test_HappyPath(t *testing.T) {
 	serverShare := givenServerSendsSharedSecret(t, clientKey, clientPotp, keySize)
 	sharedKey := mixSharedSecretsForKey(serverShare, clientShare, keySize)
 	sw, err := NewSecureWireAES256CGM(sharedKey[0:32], sharedKey[32:32+12], cPipe)
-
+	if err != nil {
+		t.Error(err)
+	}
 	gb := make([]byte, 4)
 	n, err := sw.Read(gb)
 	if n != 4 || err != nil || !bytes.Equal(gb[:], []byte{'G', 'O', 'O', 'D'}) {
 		t.Error("error reading final secure_wire good confirmation")
 	}
-	sw.Write([]byte{'G', 'O', 'O', 'D'})
+	_, _ = sw.Write([]byte{'G', 'O', 'O', 'D'})
 	assertConnectionStillOpen(t)
 }
 
@@ -479,6 +490,9 @@ func givenSharedSecretRequestReceived(t *testing.T) (serverKey *config.Key, clie
 		t.Error("sharedSecretRequest.RequestType should be 0, as so far the only version implemented")
 	}
 	serverKey, _ = cfg.GetKeyByID(sharedSecretRequest.KeyIdPreferredAsString())
+	if serverKey.Uuid != cfg.ServerKey {
+		t.Error("server sent another key")
+	}
 	clientKey, _ = cfg.GetKeyByID(cfg.ClientKey)
 	clientPotp, _ = cfg.GetPotpByID(cfg.ClientPotp)
 	return serverKey, clientKey, clientPotp
