@@ -3,10 +3,8 @@ package wire
 import (
 	"bytes"
 	"crypto/rand"
-	"encoding/base64"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"github.com/cloudflare/circl/dh/sidh"
 	"github.com/google/logger"
 	"github.com/kuking/go-pqsw/config"
@@ -395,84 +393,48 @@ func Test_SecureWireSetup(t *testing.T) {
 	}
 }
 
+func Test_SecureWriteGoodMessageInvalid(t *testing.T) {
+	setup()
+	defer cleanup()
+	givenOtpInConfig()
+	givenPuzzleAnswered(t)
+	givenClientHelloAnswered(t)
+	serverKey, clientKey, clientPotp := givenSharedSecretRequestReceived(t)
+	clientShare := givenClientSendsSharedSecret(t, clientKey, serverKey, clientPotp)
+	keySize := len(clientShare.Otp) // otp size will be the same as keySize, .. so far
+	serverShare := givenServerSendsSharedSecret(t, clientKey, clientPotp, keySize)
+	sharedKey := mixSharedSecretsForKey(serverShare, clientShare, keySize)
+	sw, err := NewSecureWireAES256CGM(sharedKey[0:32], sharedKey[32:32+12], cPipe)
+
+	gb := make([]byte, 4)
+	n, err := sw.Read(gb)
+	if n != 4 || err != nil || !bytes.Equal(gb[:], []byte{'G', 'O', 'O', 'D'}) {
+		t.Error("error reading final secure_wire good confirmation")
+	}
+	sw.Write([]byte{'N', 'O', 'G', 'O', 'O', 'D'})
+	assertClosedConnection(t)
+}
+
 func Test_HappyPath(t *testing.T) {
 	setup()
 	defer cleanup()
 	givenOtpInConfig()
-
 	givenPuzzleAnswered(t)
 	givenClientHelloAnswered(t)
 	serverKey, clientKey, clientPotp := givenSharedSecretRequestReceived(t)
-	keySize, clientSecretsCount, kem := calculateKeySizeKemsCountAndKem(clientKey)
-	clientPotpBytes, otpOffset := clientPotp.PickOTP(keySize)
-	fmt.Printf("client sent: otp ofs=%v size=%v val=%v\n", otpOffset, keySize, base64.StdEncoding.EncodeToString(clientPotpBytes))
+	clientShare := givenClientSendsSharedSecret(t, clientKey, serverKey, clientPotp)
+	keySize := len(clientShare.Otp) // otp size will be the same as keySize, .. so far
+	serverShare := givenServerSendsSharedSecret(t, clientKey, clientPotp, keySize)
+	sharedKey := mixSharedSecretsForKey(serverShare, clientShare, keySize)
+	sw, err := NewSecureWireAES256CGM(sharedKey[0:32], sharedKey[32:32+12], cPipe)
 
-	sharedSecretBundleDescResponse = msg.SharedSecretBundleDescriptionResponse{
-		PotpIdUsed:   clientPotp.GetPotpIdAs32Byte(),
-		PotpOffset:   otpOffset,
-		SecretsCount: uint8(clientSecretsCount),
-		SecretSize:   uint16(kem.CiphertextSize()),
-	}
-	send(t, sharedSecretBundleDescResponse)
-
-	clientSecret := msg.SharedSecret{
-		Otp:    clientPotpBytes,
-		Shared: make([][]byte, clientSecretsCount),
-	}
-	for secretNo := 0; secretNo < clientSecretsCount; secretNo++ {
-		clientSecret.Shared[secretNo] = make([]byte, kem.SharedSecretSize())
-		ciphertext := make([]byte, kem.CiphertextSize())
-		err := kem.Encapsulate(ciphertext, clientSecret.Shared[secretNo], serverKey.GetSidhPublicKey())
-		if err != nil {
-			panic(err)
-		}
-		send(t, ciphertext)
-		fmt.Printf("client sent: secret[%v] %v (cipher: %v)\n", secretNo, cryptoutil.EncB64(clientSecret.Shared[secretNo]), cryptoutil.EncB64(ciphertext))
-	}
-
-	recv(t, &sharedSecretBundleDescResponse)
-	serverPotp, _ := cfg.GetPotpByID(sharedSecretBundleDescResponse.PotpIdAsString())
-	serverPotpOfs := sharedSecretBundleDescResponse.PotpOffset
-	serverPotpBytes, _ := serverPotp.ReadOTP(keySize, serverPotpOfs)
-	fmt.Printf("client recv: otp ofs=%v len=%v val=%v\n", serverPotpOfs, keySize, cryptoutil.EncB64(serverPotpBytes))
-
-	serverSecret := msg.SharedSecret{
-		Otp:    serverPotpBytes,
-		Shared: make([][]byte, sharedSecretBundleDescResponse.SecretsCount),
-	}
-	for secretNo := 0; secretNo < int(sharedSecretBundleDescResponse.SecretsCount); secretNo++ {
-		ciphertext := make([]byte, sharedSecretBundleDescResponse.SecretSize)
-		serverSecret.Shared[secretNo] = make([]byte, kem.SharedSecretSize())
-		recv(t, &ciphertext)
-		err := kem.Decapsulate(serverSecret.Shared[secretNo], clientKey.GetSidhPrivateKey(), clientKey.GetSidhPublicKey(), ciphertext)
-		if err != nil {
-			panic(err)
-		}
-		fmt.Printf("client recv: secret[%v] %v (cipher: %v)\n", secretNo, cryptoutil.EncB64(serverSecret.Shared[secretNo]), cryptoutil.EncB64(ciphertext))
-	}
-
-	keysBytes := mixSharedSecretsForKey(&serverSecret, &clientSecret, keySize)
-	fmt.Printf("client' key: %v\n", cryptoutil.EncB64(keysBytes))
-
-	sw, err := NewSecureWireAES256CGM(keysBytes[0:32], keysBytes[32:32+12], cPipe) // TODO: MISSING Triple AES256
-	if err != nil {
-		t.Errorf("could not stablish secure wire, err=%v", err)
-	}
 	gb := make([]byte, 4)
 	n, err := sw.Read(gb)
-	if n != 4 || err != nil {
+	if n != 4 || err != nil || !bytes.Equal(gb[:], []byte{'G', 'O', 'O', 'D'}) {
 		t.Error("error reading final secure_wire good confirmation")
 	}
-	if gb[0] != 'G' || gb[1] != 'O' || gb[2] != 'O' || gb[3] != 'D' {
-		t.Error("the secure_write good confirmation is not correct")
-	}
-	// FIXME: This last one is not asserted by the server, as it closes connection ASAP
-	n, err = sw.Write([]byte{'G', 'O', 'O', 'D'})
-	if n != 4 || err != nil {
-		t.Error("error writing final secure_wire good confirmation")
-	}
-
-	fmt.Println("Secure Connection was established successfully")
+	sw.Write([]byte{'G', 'O', 'O', 'D'})
+	assertConnectionStillOpen(t)
 }
 
 // ----- givens ------------------------------------------------------------------------------------------------------
