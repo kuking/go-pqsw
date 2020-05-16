@@ -532,7 +532,7 @@ func ClientSendsNoise(minimumAmount int) int {
 }
 
 func ServerSendsNoise(minimumAmount int) int {
-	return sendNoise(cPipe, minimumAmount)
+	return sendNoise(sPipe, minimumAmount)
 }
 
 func givenClientSendsSharedSecret(t *testing.T, clientKey *config.Key, serverKey *config.Key, clientPotp *config.Potp) *msg.SharedSecret {

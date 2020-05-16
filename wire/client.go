@@ -19,6 +19,36 @@ func NewServerHandshake(conn net.Conn, cfg *config.Config) {
 		return
 	}
 
+	clientKey, err := cfg.GetKeyByID(cfg.ClientKey)
+	if terminateHandshakeOnError(conn, err, "retrieving client key from configuration") {
+		return
+	}
+
+	err = sendHello(conn, clientKey)
+	if terminateHandshakeOnError(conn, err, "sending client hello") {
+		return
+	}
+
+	keySize := 123
+	kem, err := clientKey.GetKemSike()
+	if terminateHandshakeOnError(conn, err, "obtaining kem to negotiate shared secrets") {
+		return
+	}
+
+	_, serr := readSharedSecret(conn, clientKey, cfg, keySize, kem)
+	if serr != nil && terminateHandshakeOnError(conn, serr.err, "reading shared secret from server") {
+		return
+	}
+
+}
+
+func sendHello(conn net.Conn, clientKey *config.Key) error {
+	clientHello := msg.ClientHello{
+		Protocol: msg.ClientHelloProtocol,
+		WireType: msg.ClientHelloWireTypeSimpleAES256,
+		KeyId:    clientKey.GetKeyIdAs32Byte(),
+	}
+	return binary.Write(conn, binary.LittleEndian, &clientHello)
 }
 
 func answerPuzzle(conn net.Conn) (err error) {
@@ -37,6 +67,6 @@ func answerPuzzle(conn net.Conn) (err error) {
 	response := msg.PuzzleResponse{
 		Response: sha512lz.Solve(puzzle.Body, int(puzzle.Param)),
 	}
-	err = binary.Write(conn, binary.LittleEndian, response)
+	err = binary.Write(conn, binary.LittleEndian, &response)
 	return
 }
