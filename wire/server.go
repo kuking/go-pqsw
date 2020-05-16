@@ -72,7 +72,7 @@ func newClientHandshake(conn net.Conn, cfg *config.Config) {
 	}
 
 	fmt.Println("Server has established a secure connection")
-
+	//TODO: do something with the SW object
 }
 
 func handshakeOverSecureWire(sw *SecureWire) *ServerError {
@@ -295,18 +295,6 @@ func readSharedSecret(conn net.Conn, receiver *config.Key, cfg *config.Config, k
 		}
 	}
 	return res, nil
-}
-
-func terminateHandshakeOnError(conn net.Conn, err error, explanation string) bool {
-	if err == nil {
-		return false
-	}
-	logger.Infof("remote: '%v' terminated with error: '%v', while: '%v'", conn.RemoteAddr(), err, explanation)
-	err2 := conn.Close()
-	if err2 != nil {
-		logger.Infof("could not close connection %v", conn)
-	}
-	return true
 }
 
 func terminateHandshakeOnServerError(conn net.Conn, serr *ServerError, explanation string) bool {

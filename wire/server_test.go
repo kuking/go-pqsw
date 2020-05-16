@@ -35,6 +35,10 @@ func setup() {
 	cfg.PuzzleDifficulty = 10 // smaller value increases false positives in 'random/noise answer to the puzzle' tests
 	// 10 is pretty fast, no need to be specific about those tests at this time.
 	cPipe, sPipe = net.Pipe()
+}
+
+func serverSetup() {
+	setup()
 	go newClientHandshake(sPipe, cfg)
 }
 
@@ -43,22 +47,22 @@ func cleanup() {
 	_ = sPipe.Close()
 }
 
-func TestConnect_DisconnectsASAP(t *testing.T) {
-	setup()
+func TestServerConnect_DisconnectsASAP(t *testing.T) {
+	serverSetup()
 	defer cleanup()
 	_ = cPipe.Close()
-	assertClosedConnection(t)
+	assertServerClosedConnection(t)
 }
 
-func TestConnect_DisconnectsAfterReceive(t *testing.T) {
-	setup()
+func TestServerConnect_DisconnectsAfterReceive(t *testing.T) {
+	serverSetup()
 	defer cleanup()
-	recv(t, &puzzleRequest)
+	cRecv(t, &puzzleRequest)
 	_ = cPipe.Close()
-	assertClosedConnection(t)
+	assertServerClosedConnection(t)
 }
 
-func TestConnect_ServerUsesDifficultyFromConfig(t *testing.T) {
+func TestServerConnect_ServerUsesDifficultyFromConfig(t *testing.T) {
 	logger.Init("test", true, false, os.Stdout)
 	cfg = config.NewEmpty()
 	cfg.PuzzleDifficulty = 12345
@@ -66,158 +70,158 @@ func TestConnect_ServerUsesDifficultyFromConfig(t *testing.T) {
 	go newClientHandshake(sPipe, cfg)
 	defer cleanup()
 
-	recv(t, &puzzleRequest)
+	cRecv(t, &puzzleRequest)
 	if puzzleRequest.Param != 12345 {
 		t.Fatal("server should use config entry 'PuzzleDifficulty'")
 	}
 }
 
-func TestConnect_IncompletePuzzleAnswerAndCloses(t *testing.T) {
-	setup()
+func TestServerConnect_IncompletePuzzleAnswerAndCloses(t *testing.T) {
+	serverSetup()
 	defer cleanup()
-	recv(t, &puzzleRequest)
-	send(t, []byte{1, 2, 3})
+	cRecv(t, &puzzleRequest)
+	cSend(t, []byte{1, 2, 3})
 	_ = cPipe.Close()
-	assertClosedConnection(t)
+	assertServerClosedConnection(t)
 }
 
-func TestConnect_Noise(t *testing.T) {
-	setup()
+func TestServerConnect_Noise(t *testing.T) {
+	serverSetup()
 	defer cleanup()
-	recv(t, &puzzleRequest)
-	if sendNoise(1<<20) < 20 {
+	cRecv(t, &puzzleRequest)
+	if ClientSendsNoise(1<<20) < 20 {
 		t.Error("this should have at least sent 20 bytes of noise before failing")
 	}
-	assertClosedConnectionWithCause(t, msg.DisconnectCausePuzzleNotSolved)
+	assertServerClosedConnectionWithCause(t, msg.DisconnectCausePuzzleNotSolved)
 }
 
-func TestConnect_WrongPuzzleAnswer(t *testing.T) {
-	setup()
+func TestServerConnect_WrongPuzzleAnswer(t *testing.T) {
+	serverSetup()
 	defer cleanup()
-	recv(t, &puzzleRequest)
-	send(t, &msg.PuzzleResponse{}) //invalid response, should disconnect
-	assertClosedConnectionWithCause(t, msg.DisconnectCausePuzzleNotSolved)
+	cRecv(t, &puzzleRequest)
+	cSend(t, &msg.PuzzleResponse{}) //invalid response, should disconnect
+	assertServerClosedConnectionWithCause(t, msg.DisconnectCausePuzzleNotSolved)
 }
 
-func TestConnect_HappyPuzzleAnswer(t *testing.T) {
-	setup()
+func TestServerConnect_HappyPuzzleAnswer(t *testing.T) {
+	serverSetup()
 	defer cleanup()
 	givenPuzzleAnswered(t)
 	assertConnectionStillOpen(t)
 }
 
-func TestConnect_ClientClosesCorrectAnswer(t *testing.T) {
-	setup()
+func TestServerConnect_ClientClosesCorrectAnswer(t *testing.T) {
+	serverSetup()
 	defer cleanup()
 	givenPuzzleAnswered(t)
 	_ = cPipe.Close()
-	assertClosedConnection(t)
+	assertServerClosedConnection(t)
 }
 
-func TestClientHello_EmptyMessage(t *testing.T) {
-	setup()
+func TestServerClientHello_EmptyMessage(t *testing.T) {
+	serverSetup()
 	defer cleanup()
 	givenPuzzleAnswered(t)
-	send(t, &msg.ClientHello{})
-	assertClosedConnectionWithCause(t, msg.DisconnectCauseProtocolRequestedNotSupported)
+	cSend(t, &msg.ClientHello{})
+	assertServerClosedConnectionWithCause(t, msg.DisconnectCauseProtocolRequestedNotSupported)
 }
 
-func TestClientHello_Noise(t *testing.T) {
-	setup()
+func TestServerClientHello_Noise(t *testing.T) {
+	serverSetup()
 	defer cleanup()
 	givenPuzzleAnswered(t)
-	if sendNoise(1<<20) < 20 {
+	if ClientSendsNoise(1<<20) < 20 {
 		t.Error("this should have at least sent 20 bytes of noise before failing")
 	}
-	assertClosedConnectionWithCause(t, msg.DisconnectCauseProtocolRequestedNotSupported)
+	assertServerClosedConnectionWithCause(t, msg.DisconnectCauseProtocolRequestedNotSupported)
 }
 
-func TestClientHello_InvalidProtocolVersion(t *testing.T) {
-	setup()
+func TestServerClientHello_InvalidProtocolVersion(t *testing.T) {
+	serverSetup()
 	defer cleanup()
 	givenPuzzleAnswered(t)
 	givenValidClientHello()
 	clientHello.Protocol = 1234
-	send(t, clientHello)
-	assertClosedConnectionWithCause(t, msg.DisconnectCauseProtocolRequestedNotSupported)
+	cSend(t, clientHello)
+	assertServerClosedConnectionWithCause(t, msg.DisconnectCauseProtocolRequestedNotSupported)
 }
 
-func TestClientHello_InvalidWireType(t *testing.T) {
-	setup()
+func TestServerClientHello_InvalidWireType(t *testing.T) {
+	serverSetup()
 	defer cleanup()
 	givenPuzzleAnswered(t)
 	givenValidClientHello()
 	clientHello.WireType = 1234
-	send(t, clientHello)
-	assertClosedConnectionWithCause(t, msg.DisconnectCauseProtocolRequestedNotSupported)
+	cSend(t, clientHello)
+	assertServerClosedConnectionWithCause(t, msg.DisconnectCauseProtocolRequestedNotSupported)
 }
 
-func TestClientHello_WireType_TripleAES256(t *testing.T) {
-	setup()
+func TestServerClientHello_WireType_TripleAES256(t *testing.T) {
+	serverSetup()
 	defer cleanup()
 	givenOtpInConfig()
 	givenPuzzleAnswered(t)
 	givenValidClientHello()
 	clientHello.WireType = msg.ClientHelloWireTypeTripleAES256
-	send(t, clientHello)
-	recv(t, &sharedSecretRequest)
+	cSend(t, clientHello)
+	cRecv(t, &sharedSecretRequest)
 	assertConnectionStillOpen(t)
 }
 
-func TestClientHello_ServerDisconnectsWhenTripleAES256Required(t *testing.T) {
-	setup()
+func TestServerClientHello_ServerDisconnectsWhenTripleAES256Required(t *testing.T) {
+	serverSetup()
 	defer cleanup()
 	cfg.RequireTripleAES256 = true
 	givenPuzzleAnswered(t)
 	givenValidClientHello()
-	send(t, clientHello)
-	assertClosedConnectionWithCause(t, msg.DisconnectCauseNotEnoughSecurityRequested)
+	cSend(t, clientHello)
+	assertServerClosedConnectionWithCause(t, msg.DisconnectCauseNotEnoughSecurityRequested)
 }
 
-func TestClientHello_UnrecognizedKeyId(t *testing.T) {
-	setup()
+func TestServerClientHello_UnrecognizedKeyId(t *testing.T) {
+	serverSetup()
 	defer cleanup()
 	givenPuzzleAnswered(t)
 	givenValidClientHello()
 	copy(clientHello.KeyId[5:], []byte{1, 2, 3, 4, 5, 6, 7, 8})
-	send(t, clientHello)
-	assertClosedConnectionWithCause(t, msg.DisconnectCauseCounterpartyKeyIdNotRecognised)
+	cSend(t, clientHello)
+	assertServerClosedConnectionWithCause(t, msg.DisconnectCauseCounterpartyKeyIdNotRecognised)
 }
 
-func TestClientHello_SendsAndDisconnects(t *testing.T) {
-	setup()
+func TestServerClientHello_SendsAndDisconnects(t *testing.T) {
+	serverSetup()
 	defer cleanup()
 	givenPuzzleAnswered(t)
 	givenValidClientHello()
-	send(t, clientHello)
+	cSend(t, clientHello)
 	_ = cPipe.Close()
-	assertClosedConnection(t)
+	assertServerClosedConnection(t)
 }
 
-func TestClientHello_HappyPath(t *testing.T) {
-	setup()
+func TestServerClientHello_HappyPath(t *testing.T) {
+	serverSetup()
 	defer cleanup()
 	givenOtpInConfig()
 	givenPuzzleAnswered(t)
 	givenValidClientHello()
-	send(t, clientHello)
-	recv(t, &sharedSecretRequest)
+	cSend(t, clientHello)
+	cRecv(t, &sharedSecretRequest)
 	assertConnectionStillOpen(t)
 }
 
-func TestSharedSecretRequest_Disconnect(t *testing.T) {
-	setup()
+func TestServerSharedSecretRequest_Disconnect(t *testing.T) {
+	serverSetup()
 	defer cleanup()
 	givenOtpInConfig()
 	givenPuzzleAnswered(t)
 	givenClientHelloAnswered(t)
-	recv(t, &sharedSecretRequest)
+	cRecv(t, &sharedSecretRequest)
 	_ = cPipe.Close()
-	assertClosedConnection(t)
+	assertServerClosedConnection(t)
 }
 
-func TestSharedSecretRequest_EmptyResponse(t *testing.T) {
-	setup()
+func TestServerSharedSecretRequest_EmptyResponse(t *testing.T) {
+	serverSetup()
 	defer cleanup()
 	givenOtpInConfig()
 	givenPuzzleAnswered(t)
@@ -225,30 +229,30 @@ func TestSharedSecretRequest_EmptyResponse(t *testing.T) {
 	givenSharedSecretRequestReceived(t)
 
 	sharedSecretBundleDescResponse = msg.SharedSecretBundleDescriptionResponse{}
-	send(t, sharedSecretBundleDescResponse)
+	cSend(t, sharedSecretBundleDescResponse)
 
-	assertClosedConnectionWithCause(t, msg.DisconnectCauseNotEnoughSecurityRequested)
+	assertServerClosedConnectionWithCause(t, msg.DisconnectCauseNotEnoughSecurityRequested)
 }
 
-func TestSharedSecretRequest_InvalidSecretsCount(t *testing.T) {
-	setup()
+func TestServerSharedSecretRequest_InvalidSecretsCount(t *testing.T) {
+	serverSetup()
 	defer cleanup()
 	givenOtpInConfig()
 	givenPuzzleAnswered(t)
 	givenClientHelloAnswered(t)
 	_, _, clientPotp := givenSharedSecretRequestReceived(t)
 
-	send(t, msg.SharedSecretBundleDescriptionResponse{
+	cSend(t, msg.SharedSecretBundleDescriptionResponse{
 		PotpIdUsed:   clientPotp.GetPotpIdAs32Byte(),
 		PotpOffset:   123,
 		SecretsCount: 0,
 		SecretSize:   500,
 	})
-	assertClosedConnectionWithCause(t, msg.DisconnectCauseNotEnoughSecurityRequested)
+	assertServerClosedConnectionWithCause(t, msg.DisconnectCauseNotEnoughSecurityRequested)
 }
 
-func TestSharedSecretRequest_InvalidPotpId(t *testing.T) {
-	setup()
+func TestServerSharedSecretRequest_InvalidPotpId(t *testing.T) {
+	serverSetup()
 	defer cleanup()
 	givenOtpInConfig()
 	givenPuzzleAnswered(t)
@@ -261,12 +265,12 @@ func TestSharedSecretRequest_InvalidPotpId(t *testing.T) {
 		SecretsCount: 3,
 		SecretSize:   402,
 	}
-	send(t, sharedSecretBundleDescResponse)
-	assertClosedConnectionWithCause(t, msg.DisconnectCausePotpNotRecognised)
+	cSend(t, sharedSecretBundleDescResponse)
+	assertServerClosedConnectionWithCause(t, msg.DisconnectCausePotpNotRecognised)
 }
 
-func TestSharedSecretRequest_InsufficientSharedSecrets(t *testing.T) {
-	setup()
+func TestServerSharedSecretRequest_InsufficientSharedSecrets(t *testing.T) {
+	serverSetup()
 	defer cleanup()
 	givenOtpInConfig()
 	givenPuzzleAnswered(t)
@@ -274,18 +278,18 @@ func TestSharedSecretRequest_InsufficientSharedSecrets(t *testing.T) {
 
 	_, clientKey, clientPotp := givenSharedSecretRequestReceived(t)
 	_, kemsCount, kem := calculateKeySizeKemsCountAndKem(clientKey)
-	send(t, msg.SharedSecretBundleDescriptionResponse{
+	cSend(t, msg.SharedSecretBundleDescriptionResponse{
 		PotpIdUsed:   clientPotp.GetPotpIdAs32Byte(),
 		PotpOffset:   123,
 		SecretsCount: uint8(kemsCount + 1),
 		SecretSize:   uint16(kem.CiphertextSize()),
 	})
 
-	assertClosedConnectionWithCause(t, msg.DisconnectCauseNotEnoughSecurityRequested)
+	assertServerClosedConnectionWithCause(t, msg.DisconnectCauseNotEnoughSecurityRequested)
 }
 
-func TestSharedSecretRequest_EmptyCiphertexts(t *testing.T) {
-	setup()
+func TestServerSharedSecretRequest_EmptyCiphertexts(t *testing.T) {
+	serverSetup()
 	defer cleanup()
 	givenOtpInConfig()
 
@@ -300,18 +304,18 @@ func TestSharedSecretRequest_EmptyCiphertexts(t *testing.T) {
 		SecretsCount: uint8(clientSecretsCount),
 		SecretSize:   uint16(kem.CiphertextSize()),
 	}
-	send(t, sharedSecretBundleDescResponse)
+	cSend(t, sharedSecretBundleDescResponse)
 
 	for secretNo := 0; secretNo < clientSecretsCount; secretNo++ {
 		ciphertext := make([]byte, kem.CiphertextSize())
-		send(t, ciphertext)
+		cSend(t, ciphertext)
 	}
 
-	recv(t, &sharedSecretBundleDescResponse) // implies the server is happy with the message
+	cRecv(t, &sharedSecretBundleDescResponse) // implies the server is happy with the message
 }
 
-func TestShareSecretRequest_ClientSendsInvalidSizeKem(t *testing.T) {
-	setup()
+func TestServerShareSecretRequest_ClientSendsInvalidSizeKem(t *testing.T) {
+	serverSetup()
 	defer cleanup()
 	givenOtpInConfig()
 
@@ -327,24 +331,24 @@ func TestShareSecretRequest_ClientSendsInvalidSizeKem(t *testing.T) {
 		SecretSize:   uint16(kem.CiphertextSize() + 25),
 	}
 
-	send(t, sharedSecretBundleDescResponse)
-	assertClosedConnectionWithCause(t, msg.DisconnectCauseNotEnoughSecurityRequested)
+	cSend(t, sharedSecretBundleDescResponse)
+	assertServerClosedConnectionWithCause(t, msg.DisconnectCauseNotEnoughSecurityRequested)
 }
 
-func TestShareSecretRequest_ClientSendsNoiseKemItShouldNotPanic(t *testing.T) {
-	setup()
+func TestServerShareSecretRequest_ClientSendsNoiseKemItShouldNotPanic(t *testing.T) {
+	serverSetup()
 	defer cleanup()
 	givenOtpInConfig()
 
 	givenPuzzleAnswered(t)
 	givenClientHelloAnswered(t)
 	givenSharedSecretRequestReceived(t)
-	sendNoise(10000)
-	assertClosedConnectionWithCause(t, msg.DisconnectCauseNotEnoughSecurityRequested)
+	ClientSendsNoise(10000)
+	assertServerClosedConnectionWithCause(t, msg.DisconnectCauseNotEnoughSecurityRequested)
 }
 
-func TestSharedSecretRequest_ClientSendsSharedSecretServerACK(t *testing.T) {
-	setup()
+func TestServerSharedSecretRequest_ClientSendsSharedSecretServerACK(t *testing.T) {
+	serverSetup()
 	defer cleanup()
 	givenOtpInConfig()
 	givenPuzzleAnswered(t)
@@ -352,11 +356,11 @@ func TestSharedSecretRequest_ClientSendsSharedSecretServerACK(t *testing.T) {
 	serverKey, clientKey, clientPotp := givenSharedSecretRequestReceived(t)
 
 	givenClientSendsSharedSecret(t, clientKey, serverKey, clientPotp)
-	recv(t, &sharedSecretBundleDescResponse) // implies the server is happy with the message
+	cRecv(t, &sharedSecretBundleDescResponse) // implies the server is happy with the message
 }
 
-func TestSharedSecretRequest_ClientAndServerExchangeSharedSecret(t *testing.T) {
-	setup()
+func TestServerSharedSecretRequest_ClientAndServerExchangeSharedSecret(t *testing.T) {
+	serverSetup()
 	defer cleanup()
 	givenOtpInConfig()
 	givenPuzzleAnswered(t)
@@ -365,14 +369,14 @@ func TestSharedSecretRequest_ClientAndServerExchangeSharedSecret(t *testing.T) {
 
 	givenClientSendsSharedSecret(t, clientKey, serverKey, clientPotp)
 
-	recv(t, &sharedSecretBundleDescResponse) // implies the server is happy with the message
+	cRecv(t, &sharedSecretBundleDescResponse) // implies the server is happy with the message
 	ciphertext := make([]byte, sharedSecretBundleDescResponse.SecretSize)
 	kem, _ := clientKey.GetKemSike()
 	if kem.CiphertextSize() != len(ciphertext) {
 		t.Error("secret size sent by server is wrong")
 	}
 	for i := 0; i < int(sharedSecretBundleDescResponse.SecretsCount); i++ {
-		recv(t, ciphertext)
+		cRecv(t, ciphertext)
 		err := kem.Decapsulate(ciphertext, clientKey.GetSidhPrivateKey(), serverKey.GetSidhPublicKey(), ciphertext)
 		if err != nil {
 			t.Error("kem failed to decapsulate", err)
@@ -381,8 +385,8 @@ func TestSharedSecretRequest_ClientAndServerExchangeSharedSecret(t *testing.T) {
 	assertConnectionStillOpen(t)
 }
 
-func Test_SecureWireSetup(t *testing.T) {
-	setup()
+func TestServer_SecureWireSetup(t *testing.T) {
+	serverSetup()
 	defer cleanup()
 	givenOtpInConfig()
 	givenPuzzleAnswered(t)
@@ -400,8 +404,8 @@ func Test_SecureWireSetup(t *testing.T) {
 	}
 }
 
-func Test_SecureWriteGoodMessageInvalid(t *testing.T) {
-	setup()
+func TestServer_SecureWriteGoodMessageInvalid(t *testing.T) {
+	serverSetup()
 	defer cleanup()
 	givenOtpInConfig()
 	givenPuzzleAnswered(t)
@@ -421,11 +425,11 @@ func Test_SecureWriteGoodMessageInvalid(t *testing.T) {
 		t.Error("error reading final secure_wire good confirmation")
 	}
 	_, _ = sw.Write([]byte{'N', 'O', 'G', 'O', 'O', 'D'})
-	assertClosedConnection(t)
+	assertServerClosedConnection(t)
 }
 
-func Test_HappyPath(t *testing.T) {
-	setup()
+func TestServer_HappyPath(t *testing.T) {
+	serverSetup()
 	defer cleanup()
 	givenOtpInConfig()
 	givenPuzzleAnswered(t)
@@ -464,9 +468,9 @@ func givenOtpInConfig() {
 }
 
 func givenPuzzleAnswered(t *testing.T) {
-	recv(t, &puzzleRequest)
+	cRecv(t, &puzzleRequest)
 	puzzleResponse.Response = sha512lz.Solve(puzzleRequest.Body, int(puzzleRequest.Param))
-	send(t, &puzzleResponse)
+	cSend(t, &puzzleResponse)
 }
 
 func givenValidClientHello() {
@@ -481,11 +485,11 @@ func givenValidClientHello() {
 
 func givenClientHelloAnswered(t *testing.T) {
 	givenValidClientHello()
-	send(t, clientHello)
+	cSend(t, clientHello)
 }
 
 func givenSharedSecretRequestReceived(t *testing.T) (serverKey *config.Key, clientKey *config.Key, clientPotp *config.Potp) {
-	recv(t, &sharedSecretRequest)
+	cRecv(t, &sharedSecretRequest)
 	if sharedSecretRequest.RequestType != msg.SharedSecretRequestTypeKEMAndPotp {
 		t.Error("sharedSecretRequest.RequestType should be 0, as so far the only version implemented")
 	}
@@ -498,7 +502,7 @@ func givenSharedSecretRequestReceived(t *testing.T) (serverKey *config.Key, clie
 	return serverKey, clientKey, clientPotp
 }
 
-func sendNoise(minimumAmount int) int {
+func sendNoise(conn net.Conn, minimumAmount int) int {
 	// it sends multiples of 32 bytes, no need to be precise with this
 	var bunch [32]byte
 	var err error
@@ -510,10 +514,10 @@ func sendNoise(minimumAmount int) int {
 			err = errors.New("problem creating randomness")
 		}
 		if err == nil {
-			err = cPipe.SetWriteDeadline(time.Now().Add(time.Millisecond * 10))
+			err = conn.SetWriteDeadline(time.Now().Add(time.Millisecond * 10))
 		}
 		if err == nil {
-			err = binary.Write(cPipe, binary.LittleEndian, bunch)
+			err = binary.Write(conn, binary.LittleEndian, bunch)
 		}
 		count += len(bunch)
 	}
@@ -521,6 +525,14 @@ func sendNoise(minimumAmount int) int {
 		logger.Infof("SendNoise finished due to %v", err)
 	}
 	return count
+}
+
+func ClientSendsNoise(minimumAmount int) int {
+	return sendNoise(cPipe, minimumAmount)
+}
+
+func ServerSendsNoise(minimumAmount int) int {
+	return sendNoise(cPipe, minimumAmount)
 }
 
 func givenClientSendsSharedSecret(t *testing.T, clientKey *config.Key, serverKey *config.Key, clientPotp *config.Potp) *msg.SharedSecret {
@@ -533,7 +545,7 @@ func givenClientSendsSharedSecret(t *testing.T, clientKey *config.Key, serverKey
 		SecretsCount: uint8(clientSecretsCount),
 		SecretSize:   uint16(kem.CiphertextSize()),
 	}
-	send(t, sharedSecretBundleDescResponse)
+	cSend(t, sharedSecretBundleDescResponse)
 
 	clientSecret := msg.SharedSecret{
 		Otp:    clientPotpBytes,
@@ -546,13 +558,13 @@ func givenClientSendsSharedSecret(t *testing.T, clientKey *config.Key, serverKey
 		if err != nil {
 			panic(err)
 		}
-		send(t, ciphertext)
+		cSend(t, ciphertext)
 	}
 	return &clientSecret
 }
 
 func givenServerSendsSharedSecret(t *testing.T, clientKey *config.Key, potp *config.Potp, keySize int) *msg.SharedSecret {
-	recv(t, &sharedSecretBundleDescResponse)
+	cRecv(t, &sharedSecretBundleDescResponse)
 	clientPotpId := potp.GetPotpIdAs32Byte()
 	if !bytes.Equal(sharedSecretBundleDescResponse.PotpIdUsed[:], clientPotpId[:]) {
 		t.Error("Server is asking to use another potp ... which MIGHT be fine, but it is not implemented so far, it should not")
@@ -572,7 +584,7 @@ func givenServerSendsSharedSecret(t *testing.T, clientKey *config.Key, potp *con
 		t.Error("secret size sent by server is wrong")
 	}
 	for i := 0; i < int(sharedSecretBundleDescResponse.SecretsCount); i++ {
-		recv(t, ciphertext)
+		cRecv(t, ciphertext)
 		sharedSecret.Shared[i] = make([]byte, kem.SharedSecretSize())
 		err := kem.Decapsulate(sharedSecret.Shared[i], clientKey.GetSidhPrivateKey(), clientKey.GetSidhPublicKey(), ciphertext)
 		if err != nil {
@@ -584,9 +596,9 @@ func givenServerSendsSharedSecret(t *testing.T, clientKey *config.Key, potp *con
 
 // ----------- common assertions -------------------------------------------------------------------------------------
 
-func assertClosedConnectionWithCause(t *testing.T, reason uint32) {
+func assertServerClosedConnectionWithCause(t *testing.T, reason uint32) {
 	disconnectReason := msg.DisconnectCause{}
-	recv(t, &disconnectReason)
+	cRecv(t, &disconnectReason)
 
 	if disconnectReason.Delimiter != msg.DisconnectCauseDelimiter {
 		t.Fatal("server did not send the right disconnect delimiter")
@@ -596,17 +608,25 @@ func assertClosedConnectionWithCause(t *testing.T, reason uint32) {
 			msg.DisconnectCauseString[reason], reason,
 			msg.DisconnectCauseString[disconnectReason.Cause], disconnectReason.Cause)
 	}
-	assertClosedConnection(t)
+	assertServerClosedConnection(t)
 }
 
-func assertClosedConnection(t *testing.T) {
+func assertClosedConnection(conn net.Conn, t *testing.T) {
 	one := make([]byte, 1)
-	if c, err := cPipe.Read(one); err == nil {
-		t.Fatalf("client pipe should have disconnected. But read count: %v", c)
+	if c, err := conn.Read(one); err == nil {
+		t.Fatalf("pipe should have disconnected. But read count: %v", c)
 	}
-	if c, err := sPipe.Read(one); err == nil {
-		t.Fatalf("server pipe should have disconnected. But read count: %v", c)
+	if c, err := conn.Read(one); err == nil {
+		t.Fatalf("pipe should have disconnected. But read count: %v", c)
 	}
+}
+
+func assertServerClosedConnection(t *testing.T) {
+	assertClosedConnection(cPipe, t)
+}
+
+func assertClientClosedConnection(t *testing.T) {
+	assertClosedConnection(sPipe, t)
 }
 
 func assertConnectionStillOpen(t *testing.T) {
@@ -623,17 +643,31 @@ func assertConnectionStillOpen(t *testing.T) {
 
 // ----------- misc --------------------------------------------------------------------------------------------------
 
-func send(t *testing.T, msg interface{}) {
+func cSend(t *testing.T, msg interface{}) {
 	err := binary.Write(cPipe, binary.LittleEndian, msg)
 	if err != nil {
 		t.Errorf("Client->Server failed to send '%v' with: %v", msg, err)
 	}
 }
 
-func recv(t *testing.T, msg interface{}) {
+func cRecv(t *testing.T, msg interface{}) {
 	err := binary.Read(cPipe, binary.LittleEndian, msg)
 	if err != nil {
 		t.Errorf("Client failed to receive: %v", err)
+	}
+}
+
+func sSend(t *testing.T, msg interface{}) {
+	err := binary.Write(sPipe, binary.LittleEndian, msg)
+	if err != nil {
+		t.Errorf("Server->Client failed to send '%v' with: %v", msg, err)
+	}
+}
+
+func sRecv(t *testing.T, msg interface{}) {
+	err := binary.Read(sPipe, binary.LittleEndian, msg)
+	if err != nil {
+		t.Errorf("Server failed to receive: %v", err)
 	}
 }
 
