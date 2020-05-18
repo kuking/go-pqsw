@@ -2,11 +2,11 @@ package wire
 
 import (
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"github.com/kuking/go-pqsw/config"
 	"github.com/kuking/go-pqsw/wire/msg"
 	"github.com/kuking/go-pqsw/wire/sha512lz"
+	"github.com/pkg/errors"
 	"net"
 )
 
@@ -18,37 +18,70 @@ func NewServerHandshake(conn net.Conn, cfg *config.Config) {
 	if terminateHandshakeOnError(conn, err, "answering puzzle") {
 		return
 	}
-
 	clientKey, err := cfg.GetKeyByID(cfg.ClientKey)
 	if terminateHandshakeOnError(conn, err, "retrieving client key from configuration") {
 		return
 	}
-
-	err = sendHello(conn, clientKey)
+	keySize, err := sendHello(conn, clientKey)
 	if terminateHandshakeOnError(conn, err, "sending client hello") {
 		return
 	}
-
-	keySize := 123
 	kem, err := clientKey.GetKemSike()
 	if terminateHandshakeOnError(conn, err, "obtaining kem to negotiate shared secrets") {
 		return
 	}
-
-	_, serr := readSharedSecret(conn, clientKey, cfg, keySize, kem)
-	if serr != nil && terminateHandshakeOnError(conn, serr.err, "reading shared secret from server") {
+	shareSecretReq, err := readSharedSecretRequest(conn, cfg)
+	if terminateHandshakeOnError(conn, err, "receiving server share secret request") {
+		return
+	}
+	serverKey, err := cfg.GetKeyByID(shareSecretReq.KeyIdPreferredAsString())
+	if terminateHandshakeOnError(conn, err, fmt.Sprintf("received server key in request unknown: %v", shareSecretReq.KeyIdPreferredAsString())) {
+		return
+	}
+	potp, err := cfg.GetPotpByID(cfg.ClientPotp)
+	if terminateHandshakeOnError(conn, err, "could not retrieve server potp from config") {
+		return
+	}
+	_, serr := sendSharedSecret(conn, serverKey, potp, keySize, kem)
+	if serr != nil && terminateHandshakeOnError(conn, serr.err, "sending shared secret to server") {
 		return
 	}
 
+	//_, serr := readSharedSecret(conn, clientKey, cfg, keySize, kem)
+	//if serr != nil && terminateHandshakeOnError(conn, serr.err, "reading shared secret from server") {
+	//	return
+	//}
+
 }
 
-func sendHello(conn net.Conn, clientKey *config.Key) error {
+func readSharedSecretRequest(conn net.Conn, cfg *config.Config) (req *msg.SharedSecretRequest, err error) {
+	req = &msg.SharedSecretRequest{}
+	err = binary.Read(conn, binary.LittleEndian, req)
+	if err != nil {
+		return nil, err
+	}
+	if req.RequestType != msg.SharedSecretRequestTypeKEMAndPotp {
+		return nil, errors.Errorf("unknown shared request type provided=%v", req.RequestType)
+	}
+	_, err = cfg.GetKeyByID(req.KeyIdPreferredAsString())
+	if err != nil {
+		return nil, errors.Wrap(err, "key requested by server in server share request unknown")
+	}
+	return req, nil
+}
+
+func sendHello(conn net.Conn, clientKey *config.Key) (keySize int, err error) {
 	clientHello := msg.ClientHello{
 		Protocol: msg.ClientHelloProtocol,
 		WireType: msg.ClientHelloWireTypeSimpleAES256,
 		KeyId:    clientKey.GetKeyIdAs32Byte(),
 	}
-	return binary.Write(conn, binary.LittleEndian, &clientHello)
+	keySize = (256 / 8) + (96 / 8)
+	if clientHello.WireType == msg.ClientHelloWireTypeTripleAES256 {
+		keySize = keySize * 3
+	}
+	return keySize, binary.Write(conn, binary.LittleEndian, &clientHello)
+
 }
 
 func answerPuzzle(conn net.Conn) (err error) {

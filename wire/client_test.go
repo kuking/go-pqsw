@@ -1,6 +1,7 @@
 package wire
 
 import (
+	"github.com/kuking/go-pqsw/config"
 	"github.com/kuking/go-pqsw/cryptoutil"
 	"github.com/kuking/go-pqsw/wire/msg"
 	"github.com/kuking/go-pqsw/wire/sha512lz"
@@ -11,6 +12,7 @@ import (
 func clientSetup() {
 	setup()
 	givenServerAndClientKeys()
+	givenPotpInConfig()
 	go NewServerHandshake(cPipe, cfg)
 }
 
@@ -34,7 +36,7 @@ func TestClient_PuzzleUnknownType(t *testing.T) {
 	assertClientClosedConnection(t)
 }
 
-func TestClient_PuzzleHugeDifficulty(t *testing.T) {
+func TestClient_PuzzleHugeDifficultyDisconnects(t *testing.T) {
 	clientSetup()
 	defer cleanup()
 
@@ -86,7 +88,58 @@ func TestClient_ClientHello(t *testing.T) {
 	}
 }
 
+func TestClient_ServerShareSecretRequest_InvalidRequestType(t *testing.T) {
+	clientSetup()
+	defer cleanup()
+
+	givenClientSolvesPuzzle(t)
+	givenClientHello(t)
+
+	sharedSecretRequest = msg.SharedSecretRequest{
+		RequestType: msg.SharedSecretRequestTypeKEMAndPotp + 123,
+		KeyId:       [32]byte{},
+	}
+	sSend(t, &sharedSecretRequest)
+	assertClientClosedConnection(t)
+}
+
+func TestClient_ServerShareSecretRequest_InvalidServerKey(t *testing.T) {
+	clientSetup()
+	defer cleanup()
+
+	givenClientSolvesPuzzle(t)
+	givenClientHello(t)
+
+	srvKeyBytes := [32]byte{}
+	copy(srvKeyBytes[:], cryptoutil.RandBytes(32))
+	sharedSecretRequest = msg.SharedSecretRequest{
+		RequestType: msg.SharedSecretRequestTypeKEMAndPotp,
+		KeyId:       srvKeyBytes,
+	}
+	sSend(t, &sharedSecretRequest)
+	assertClientClosedConnection(t)
+}
+
+func TestClient_ServerShareSecretRequest_andResponse(t *testing.T) {
+	clientSetup()
+	defer cleanup()
+
+	givenClientSolvesPuzzle(t)
+	_, keySize := givenClientHello(t)
+	serverKey := givenServerShareRequest(t)
+
+	givenSharedSecretReceive(t, sRecv, serverKey, nil, keySize)
+	assertConnectionStillOpen(t)
+}
+
 // ----- givens ------------------------------------------------------------------------------------------------------
+
+func givenClientHello(t *testing.T) (clientKey *config.Key, keySize int) {
+	sRecv(t, &clientHello)
+	clientKey, _ = cfg.GetKeyByID(clientHello.KeyIdAsString())
+	keySize = calculateKeySize(&clientHello)
+	return
+}
 
 func givenClientSolvesPuzzle(t *testing.T) {
 	puzzleRequest = msg.PuzzleRequest{
@@ -100,4 +153,17 @@ func givenClientSolvesPuzzle(t *testing.T) {
 	if !sha512lz.Verify(puzzleRequest.Body, puzzleResponse.Response, cfg.PuzzleDifficulty) {
 		t.Error("client did not provide a correct solution to the puzzle")
 	}
+}
+
+func givenServerShareRequest(t *testing.T) (serverKey *config.Key) {
+	serverKey, err := cfg.GetKeyByID(cfg.ServerKey)
+	if err != nil {
+		t.Errorf("could not retrieve server key from config, this is a bug in the test, err=%v", err)
+	}
+	sharedSecretRequest = msg.SharedSecretRequest{
+		RequestType: msg.SharedSecretRequestTypeKEMAndPotp,
+		KeyId:       serverKey.GetKeyIdAs32Byte(),
+	}
+	sSend(t, &sharedSecretRequest)
+	return
 }

@@ -159,7 +159,7 @@ func TestServerClientHello_InvalidWireType(t *testing.T) {
 func TestServerClientHello_WireType_TripleAES256(t *testing.T) {
 	serverSetup()
 	defer cleanup()
-	givenOtpInConfig()
+	givenPotpInConfig()
 	givenPuzzleAnswered(t)
 	givenValidClientHello()
 	clientHello.WireType = msg.ClientHelloWireTypeTripleAES256
@@ -201,7 +201,7 @@ func TestServerClientHello_SendsAndDisconnects(t *testing.T) {
 func TestServerClientHello_HappyPath(t *testing.T) {
 	serverSetup()
 	defer cleanup()
-	givenOtpInConfig()
+	givenPotpInConfig()
 	givenPuzzleAnswered(t)
 	givenValidClientHello()
 	cSend(t, clientHello)
@@ -212,7 +212,7 @@ func TestServerClientHello_HappyPath(t *testing.T) {
 func TestServerSharedSecretRequest_Disconnect(t *testing.T) {
 	serverSetup()
 	defer cleanup()
-	givenOtpInConfig()
+	givenPotpInConfig()
 	givenPuzzleAnswered(t)
 	givenClientHelloAnswered(t)
 	cRecv(t, &sharedSecretRequest)
@@ -223,7 +223,7 @@ func TestServerSharedSecretRequest_Disconnect(t *testing.T) {
 func TestServerSharedSecretRequest_EmptyResponse(t *testing.T) {
 	serverSetup()
 	defer cleanup()
-	givenOtpInConfig()
+	givenPotpInConfig()
 	givenPuzzleAnswered(t)
 	givenClientHelloAnswered(t)
 	givenSharedSecretRequestReceived(t)
@@ -237,7 +237,7 @@ func TestServerSharedSecretRequest_EmptyResponse(t *testing.T) {
 func TestServerSharedSecretRequest_InvalidSecretsCount(t *testing.T) {
 	serverSetup()
 	defer cleanup()
-	givenOtpInConfig()
+	givenPotpInConfig()
 	givenPuzzleAnswered(t)
 	givenClientHelloAnswered(t)
 	_, _, clientPotp := givenSharedSecretRequestReceived(t)
@@ -254,7 +254,7 @@ func TestServerSharedSecretRequest_InvalidSecretsCount(t *testing.T) {
 func TestServerSharedSecretRequest_InvalidPotpId(t *testing.T) {
 	serverSetup()
 	defer cleanup()
-	givenOtpInConfig()
+	givenPotpInConfig()
 	givenPuzzleAnswered(t)
 	givenClientHelloAnswered(t)
 	givenSharedSecretRequestReceived(t)
@@ -272,7 +272,7 @@ func TestServerSharedSecretRequest_InvalidPotpId(t *testing.T) {
 func TestServerSharedSecretRequest_InsufficientSharedSecrets(t *testing.T) {
 	serverSetup()
 	defer cleanup()
-	givenOtpInConfig()
+	givenPotpInConfig()
 	givenPuzzleAnswered(t)
 	givenClientHelloAnswered(t)
 
@@ -291,7 +291,7 @@ func TestServerSharedSecretRequest_InsufficientSharedSecrets(t *testing.T) {
 func TestServerSharedSecretRequest_EmptyCiphertexts(t *testing.T) {
 	serverSetup()
 	defer cleanup()
-	givenOtpInConfig()
+	givenPotpInConfig()
 
 	givenPuzzleAnswered(t)
 	givenClientHelloAnswered(t)
@@ -317,7 +317,7 @@ func TestServerSharedSecretRequest_EmptyCiphertexts(t *testing.T) {
 func TestServerShareSecretRequest_ClientSendsInvalidSizeKem(t *testing.T) {
 	serverSetup()
 	defer cleanup()
-	givenOtpInConfig()
+	givenPotpInConfig()
 
 	givenPuzzleAnswered(t)
 	givenClientHelloAnswered(t)
@@ -338,7 +338,7 @@ func TestServerShareSecretRequest_ClientSendsInvalidSizeKem(t *testing.T) {
 func TestServerShareSecretRequest_ClientSendsNoiseKemItShouldNotPanic(t *testing.T) {
 	serverSetup()
 	defer cleanup()
-	givenOtpInConfig()
+	givenPotpInConfig()
 
 	givenPuzzleAnswered(t)
 	givenClientHelloAnswered(t)
@@ -350,7 +350,7 @@ func TestServerShareSecretRequest_ClientSendsNoiseKemItShouldNotPanic(t *testing
 func TestServerSharedSecretRequest_ClientSendsSharedSecretServerACK(t *testing.T) {
 	serverSetup()
 	defer cleanup()
-	givenOtpInConfig()
+	givenPotpInConfig()
 	givenPuzzleAnswered(t)
 	givenClientHelloAnswered(t)
 	serverKey, clientKey, clientPotp := givenSharedSecretRequestReceived(t)
@@ -362,7 +362,7 @@ func TestServerSharedSecretRequest_ClientSendsSharedSecretServerACK(t *testing.T
 func TestServerSharedSecretRequest_ClientAndServerExchangeSharedSecret(t *testing.T) {
 	serverSetup()
 	defer cleanup()
-	givenOtpInConfig()
+	givenPotpInConfig()
 	givenPuzzleAnswered(t)
 	givenClientHelloAnswered(t)
 	serverKey, clientKey, clientPotp := givenSharedSecretRequestReceived(t)
@@ -388,14 +388,14 @@ func TestServerSharedSecretRequest_ClientAndServerExchangeSharedSecret(t *testin
 func TestServer_SecureWireSetup(t *testing.T) {
 	serverSetup()
 	defer cleanup()
-	givenOtpInConfig()
+	givenPotpInConfig()
 	givenPuzzleAnswered(t)
 	givenClientHelloAnswered(t)
 	serverKey, clientKey, clientPotp := givenSharedSecretRequestReceived(t)
 
 	clientShare := givenClientSendsSharedSecret(t, clientKey, serverKey, clientPotp)
 	keySize := len(clientShare.Otp) // otp size will be the same as keySize, .. so far
-	serverShare := givenServerSendsSharedSecret(t, clientKey, clientPotp, keySize)
+	serverShare := givenSharedSecretReceive(t, cRecv, clientKey, clientPotp, keySize)
 
 	sharedKey := mixSharedSecretsForKey(serverShare, clientShare, keySize) // FIXME: method is not being tested ...
 	_, err := NewSecureWireAES256CGM(sharedKey[0:32], sharedKey[32:32+12], cPipe)
@@ -407,13 +407,13 @@ func TestServer_SecureWireSetup(t *testing.T) {
 func TestServer_SecureWriteGoodMessageInvalid(t *testing.T) {
 	serverSetup()
 	defer cleanup()
-	givenOtpInConfig()
+	givenPotpInConfig()
 	givenPuzzleAnswered(t)
 	givenClientHelloAnswered(t)
 	serverKey, clientKey, clientPotp := givenSharedSecretRequestReceived(t)
 	clientShare := givenClientSendsSharedSecret(t, clientKey, serverKey, clientPotp)
 	keySize := len(clientShare.Otp) // otp size will be the same as keySize, .. so far
-	serverShare := givenServerSendsSharedSecret(t, clientKey, clientPotp, keySize)
+	serverShare := givenSharedSecretReceive(t, cRecv, clientKey, clientPotp, keySize)
 	sharedKey := mixSharedSecretsForKey(serverShare, clientShare, keySize)
 	sw, err := NewSecureWireAES256CGM(sharedKey[0:32], sharedKey[32:32+12], cPipe)
 	if err != nil {
@@ -431,13 +431,13 @@ func TestServer_SecureWriteGoodMessageInvalid(t *testing.T) {
 func TestServer_HappyPath(t *testing.T) {
 	serverSetup()
 	defer cleanup()
-	givenOtpInConfig()
+	givenPotpInConfig()
 	givenPuzzleAnswered(t)
 	givenClientHelloAnswered(t)
 	serverKey, clientKey, clientPotp := givenSharedSecretRequestReceived(t)
 	clientShare := givenClientSendsSharedSecret(t, clientKey, serverKey, clientPotp)
 	keySize := len(clientShare.Otp) // otp size will be the same as keySize, .. so far
-	serverShare := givenServerSendsSharedSecret(t, clientKey, clientPotp, keySize)
+	serverShare := givenSharedSecretReceive(t, cRecv, clientKey, clientPotp, keySize)
 	sharedKey := mixSharedSecretsForKey(serverShare, clientShare, keySize)
 	sw, err := NewSecureWireAES256CGM(sharedKey[0:32], sharedKey[32:32+12], cPipe)
 	if err != nil {
@@ -461,7 +461,7 @@ func givenServerAndClientKeys() {
 	cfg.ClientKey = key.Uuid
 }
 
-func givenOtpInConfig() {
+func givenPotpInConfig() {
 	potp, _ := cfg.CreateInPlacePotp(4096)
 	cfg.ServerPotp = potp.Uuid
 	cfg.ClientPotp = potp.Uuid
@@ -563,11 +563,17 @@ func givenClientSendsSharedSecret(t *testing.T, clientKey *config.Key, serverKey
 	return &clientSecret
 }
 
-func givenServerSendsSharedSecret(t *testing.T, clientKey *config.Key, potp *config.Potp, keySize int) *msg.SharedSecret {
-	cRecv(t, &sharedSecretBundleDescResponse)
-	clientPotpId := potp.GetPotpIdAs32Byte()
-	if !bytes.Equal(sharedSecretBundleDescResponse.PotpIdUsed[:], clientPotpId[:]) {
-		t.Error("Server is asking to use another potp ... which MIGHT be fine, but it is not implemented so far, it should not")
+func givenSharedSecretReceive(t *testing.T, receiver func(t *testing.T, msg interface{}), receiverKey *config.Key, expectedPotp *config.Potp, keySize int) *msg.SharedSecret {
+	receiver(t, &sharedSecretBundleDescResponse)
+	if expectedPotp != nil {
+		clientPotpId := expectedPotp.GetPotpIdAs32Byte()
+		if !bytes.Equal(sharedSecretBundleDescResponse.PotpIdUsed[:], clientPotpId[:]) {
+			t.Error("Server is asking to use another potp ... which MIGHT be fine, but it is not implemented so far, it should not")
+		}
+	}
+	potp, err := cfg.GetPotpByID(sharedSecretBundleDescResponse.PotpIdAsString())
+	if err != nil {
+		t.Errorf("failed to retrieve potp id %v, err=%v", sharedSecretBundleDescResponse.PotpIdAsString(), err)
 	}
 	potpBytes, err := potp.ReadOTP(keySize, sharedSecretBundleDescResponse.PotpOffset)
 	if err != nil {
@@ -579,14 +585,14 @@ func givenServerSendsSharedSecret(t *testing.T, clientKey *config.Key, potp *con
 	}
 
 	ciphertext := make([]byte, sharedSecretBundleDescResponse.SecretSize)
-	kem, _ := clientKey.GetKemSike()
+	kem, _ := receiverKey.GetKemSike()
 	if kem.CiphertextSize() != len(ciphertext) {
 		t.Error("secret size sent by server is wrong")
 	}
 	for i := 0; i < int(sharedSecretBundleDescResponse.SecretsCount); i++ {
-		cRecv(t, ciphertext)
+		receiver(t, ciphertext)
 		sharedSecret.Shared[i] = make([]byte, kem.SharedSecretSize())
-		err := kem.Decapsulate(sharedSecret.Shared[i], clientKey.GetSidhPrivateKey(), clientKey.GetSidhPublicKey(), ciphertext)
+		err := kem.Decapsulate(sharedSecret.Shared[i], receiverKey.GetSidhPrivateKey(), receiverKey.GetSidhPublicKey(), ciphertext)
 		if err != nil {
 			t.Error("kem failed to decapsulate", err)
 		}
