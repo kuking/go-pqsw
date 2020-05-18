@@ -353,9 +353,9 @@ func TestServerSharedSecretRequest_ClientSendsSharedSecretServerACK(t *testing.T
 	givenPotpInConfig()
 	givenPuzzleAnswered(t)
 	givenClientHelloAnswered(t)
-	serverKey, clientKey, clientPotp := givenSharedSecretRequestReceived(t)
+	serverKey, _, clientPotp := givenSharedSecretRequestReceived(t)
 
-	givenClientSendsSharedSecret(t, clientKey, serverKey, clientPotp)
+	givenSharedSecretSend(t, cSend, serverKey, clientPotp)
 	cRecv(t, &sharedSecretBundleDescResponse) // implies the server is happy with the message
 }
 
@@ -367,7 +367,7 @@ func TestServerSharedSecretRequest_ClientAndServerExchangeSharedSecret(t *testin
 	givenClientHelloAnswered(t)
 	serverKey, clientKey, clientPotp := givenSharedSecretRequestReceived(t)
 
-	givenClientSendsSharedSecret(t, clientKey, serverKey, clientPotp)
+	givenSharedSecretSend(t, cSend, serverKey, clientPotp)
 
 	cRecv(t, &sharedSecretBundleDescResponse) // implies the server is happy with the message
 	ciphertext := make([]byte, sharedSecretBundleDescResponse.SecretSize)
@@ -393,7 +393,7 @@ func TestServer_SecureWireSetup(t *testing.T) {
 	givenClientHelloAnswered(t)
 	serverKey, clientKey, clientPotp := givenSharedSecretRequestReceived(t)
 
-	clientShare := givenClientSendsSharedSecret(t, clientKey, serverKey, clientPotp)
+	clientShare := givenSharedSecretSend(t, cSend, serverKey, clientPotp)
 	keySize := len(clientShare.Otp) // otp size will be the same as keySize, .. so far
 	serverShare := givenSharedSecretReceive(t, cRecv, clientKey, clientPotp, keySize)
 
@@ -411,7 +411,7 @@ func TestServer_SecureWriteGoodMessageInvalid(t *testing.T) {
 	givenPuzzleAnswered(t)
 	givenClientHelloAnswered(t)
 	serverKey, clientKey, clientPotp := givenSharedSecretRequestReceived(t)
-	clientShare := givenClientSendsSharedSecret(t, clientKey, serverKey, clientPotp)
+	clientShare := givenSharedSecretSend(t, cSend, serverKey, clientPotp)
 	keySize := len(clientShare.Otp) // otp size will be the same as keySize, .. so far
 	serverShare := givenSharedSecretReceive(t, cRecv, clientKey, clientPotp, keySize)
 	sharedKey := mixSharedSecretsForKey(serverShare, clientShare, keySize)
@@ -435,7 +435,7 @@ func TestServer_HappyPath(t *testing.T) {
 	givenPuzzleAnswered(t)
 	givenClientHelloAnswered(t)
 	serverKey, clientKey, clientPotp := givenSharedSecretRequestReceived(t)
-	clientShare := givenClientSendsSharedSecret(t, clientKey, serverKey, clientPotp)
+	clientShare := givenSharedSecretSend(t, cSend, serverKey, clientPotp)
 	keySize := len(clientShare.Otp) // otp size will be the same as keySize, .. so far
 	serverShare := givenSharedSecretReceive(t, cRecv, clientKey, clientPotp, keySize)
 	sharedKey := mixSharedSecretsForKey(serverShare, clientShare, keySize)
@@ -535,36 +535,36 @@ func ServerSendsNoise(minimumAmount int) int {
 	return sendNoise(sPipe, minimumAmount)
 }
 
-func givenClientSendsSharedSecret(t *testing.T, clientKey *config.Key, serverKey *config.Key, clientPotp *config.Potp) *msg.SharedSecret {
-	keySize, clientSecretsCount, kem := calculateKeySizeKemsCountAndKem(clientKey)
-	clientPotpBytes, otpOffset := clientPotp.PickOTP(keySize)
+func givenSharedSecretSend(t *testing.T, send func(t *testing.T, msg interface{}), receiverKey *config.Key, potp *config.Potp) *msg.SharedSecret {
+	keySize, clientSecretsCount, kem := calculateKeySizeKemsCountAndKem(receiverKey)
+	potpBytes, otpOffset := potp.PickOTP(keySize)
 
 	sharedSecretBundleDescResponse = msg.SharedSecretBundleDescriptionResponse{
-		PotpIdUsed:   clientPotp.GetPotpIdAs32Byte(),
+		PotpIdUsed:   potp.GetPotpIdAs32Byte(),
 		PotpOffset:   otpOffset,
 		SecretsCount: uint8(clientSecretsCount),
 		SecretSize:   uint16(kem.CiphertextSize()),
 	}
-	cSend(t, sharedSecretBundleDescResponse)
+	send(t, sharedSecretBundleDescResponse)
 
-	clientSecret := msg.SharedSecret{
-		Otp:    clientPotpBytes,
+	sharedSecret := msg.SharedSecret{
+		Otp:    potpBytes,
 		Shared: make([][]byte, clientSecretsCount),
 	}
 	for secretNo := 0; secretNo < clientSecretsCount; secretNo++ {
-		clientSecret.Shared[secretNo] = make([]byte, kem.SharedSecretSize())
+		sharedSecret.Shared[secretNo] = make([]byte, kem.SharedSecretSize())
 		ciphertext := make([]byte, kem.CiphertextSize())
-		err := kem.Encapsulate(ciphertext, clientSecret.Shared[secretNo], serverKey.GetSidhPublicKey())
+		err := kem.Encapsulate(ciphertext, sharedSecret.Shared[secretNo], receiverKey.GetSidhPublicKey())
 		if err != nil {
 			panic(err)
 		}
-		cSend(t, ciphertext)
+		send(t, ciphertext)
 	}
-	return &clientSecret
+	return &sharedSecret
 }
 
-func givenSharedSecretReceive(t *testing.T, receiver func(t *testing.T, msg interface{}), receiverKey *config.Key, expectedPotp *config.Potp, keySize int) *msg.SharedSecret {
-	receiver(t, &sharedSecretBundleDescResponse)
+func givenSharedSecretReceive(t *testing.T, recv func(t *testing.T, msg interface{}), receiverKey *config.Key, expectedPotp *config.Potp, keySize int) *msg.SharedSecret {
+	recv(t, &sharedSecretBundleDescResponse)
 	if expectedPotp != nil {
 		clientPotpId := expectedPotp.GetPotpIdAs32Byte()
 		if !bytes.Equal(sharedSecretBundleDescResponse.PotpIdUsed[:], clientPotpId[:]) {
@@ -590,7 +590,7 @@ func givenSharedSecretReceive(t *testing.T, receiver func(t *testing.T, msg inte
 		t.Error("secret size sent by server is wrong")
 	}
 	for i := 0; i < int(sharedSecretBundleDescResponse.SecretsCount); i++ {
-		receiver(t, ciphertext)
+		recv(t, ciphertext)
 		sharedSecret.Shared[i] = make([]byte, kem.SharedSecretSize())
 		err := kem.Decapsulate(sharedSecret.Shared[i], receiverKey.GetSidhPrivateKey(), receiverKey.GetSidhPublicKey(), ciphertext)
 		if err != nil {
@@ -622,9 +622,9 @@ func assertClosedConnection(conn net.Conn, t *testing.T) {
 	if c, err := conn.Read(one); err == nil {
 		t.Fatalf("pipe should have disconnected. But read count: %v", c)
 	}
-	if c, err := conn.Read(one); err == nil {
-		t.Fatalf("pipe should have disconnected. But read count: %v", c)
-	}
+	//if c, err := conn.Read(one); err == nil {
+	//	t.Fatalf("pipe should have disconnected. But read count: %v", c)
+	//}
 }
 
 func assertServerClosedConnection(t *testing.T) {

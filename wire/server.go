@@ -204,7 +204,7 @@ func sendSharedSecret(conn net.Conn, receiver *config.Key, potp *config.Potp, ke
 
 	secretsCount := calculateSharedSecretsCount(kem, keySize)
 
-	fmt.Printf("server sent: otp ofs=%v len=%v val=%v\n", potpOfs, keySize, base64.StdEncoding.EncodeToString(potpBytes))
+	fmt.Printf("sent: otp ofs=%v len=%v val=%v\n", potpOfs, keySize, base64.StdEncoding.EncodeToString(potpBytes))
 
 	res = &msg.SharedSecret{
 		Otp:    potpBytes,
@@ -232,7 +232,7 @@ func sendSharedSecret(conn net.Conn, receiver *config.Key, potp *config.Potp, ke
 		if err != nil {
 			return res, Disconnect(err, msg.DisconnectCauseNone)
 		}
-		fmt.Printf("server sent: secret[%v] %v (cipher: %v)\n", secretNo, cryptoutil.EncB64(res.Shared[secretNo]), cryptoutil.EncB64(ciphertext))
+		fmt.Printf("sent: secret[%v] %v (cipher: %v)\n", secretNo, cryptoutil.EncB64(res.Shared[secretNo]), cryptoutil.EncB64(ciphertext))
 	}
 
 	return res, nil
@@ -275,7 +275,7 @@ func readSharedSecret(conn net.Conn, receiver *config.Key, cfg *config.Config, k
 	if err != nil {
 		return res, Disconnect(err, msg.DisconnectCauseSeverMisconfiguration)
 	}
-	fmt.Printf("server recv: otp ofs=%v size=%v val=%v\n", bundleDesc.PotpOffset, 32, base64.StdEncoding.EncodeToString(otpBytes))
+	fmt.Printf("recv: otp ofs=%v size=%v val=%v\n", bundleDesc.PotpOffset, 32, base64.StdEncoding.EncodeToString(otpBytes))
 
 	res = &msg.SharedSecret{
 		Otp:    otpBytes,
@@ -289,7 +289,7 @@ func readSharedSecret(conn net.Conn, receiver *config.Key, cfg *config.Config, k
 			return res, Disconnect(err, msg.DisconnectCauseNone)
 		}
 		err = kem.Decapsulate(res.Shared[count], receiver.GetSidhPrivateKey(), receiver.GetSidhPublicKey(), cipherText)
-		fmt.Printf("server recv: secret[%v] %v (cipher: %v)\n", count, cryptoutil.EncB64(res.Shared[count]), cryptoutil.EncB64(cipherText))
+		fmt.Printf("recv: secret[%v] %v (cipher: %v)\n", count, cryptoutil.EncB64(res.Shared[count]), cryptoutil.EncB64(cipherText))
 		if err != nil {
 			return res, Disconnect(err, msg.DisconnectCauseNotEnoughSecurityRequested)
 		}

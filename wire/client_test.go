@@ -1,6 +1,7 @@
 package wire
 
 import (
+	"bytes"
 	"github.com/kuking/go-pqsw/config"
 	"github.com/kuking/go-pqsw/cryptoutil"
 	"github.com/kuking/go-pqsw/wire/msg"
@@ -129,6 +130,83 @@ func TestClient_ServerShareSecretRequest_andResponse(t *testing.T) {
 	serverKey := givenServerShareRequest(t)
 
 	givenSharedSecretReceive(t, sRecv, serverKey, nil, keySize)
+}
+
+func TestClient_ShareSecretsExchange(t *testing.T) {
+	clientSetup()
+	defer cleanup()
+
+	givenClientSolvesPuzzle(t)
+	clientKey, keySize := givenClientHello(t)
+	serverKey := givenServerShareRequest(t)
+	potp, err := cfg.GetPotpByID(cfg.ServerPotp)
+	if err != nil {
+		t.Errorf("could not retrieve potp, err=%v", err)
+	}
+
+	clientShare := givenSharedSecretReceive(t, sRecv, serverKey, nil, keySize)
+	serverShare := givenSharedSecretSend(t, sSend, clientKey, potp)
+	keysBytes := mixSharedSecretsForKey(serverShare, clientShare, keySize)
+
+	_, err = NewSecureWireAES256CGM(keysBytes[0:32], keysBytes[32:32+12], sPipe)
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+func TestClient_SecureWireHandshakeIssues(t *testing.T) {
+	clientSetup()
+	defer cleanup()
+
+	givenClientSolvesPuzzle(t)
+	clientKey, keySize := givenClientHello(t)
+	serverKey := givenServerShareRequest(t)
+	potp, err := cfg.GetPotpByID(cfg.ServerPotp)
+	if err != nil {
+		t.Errorf("could not retrieve potp, err=%v", err)
+	}
+
+	clientShare := givenSharedSecretReceive(t, sRecv, serverKey, nil, keySize)
+	serverShare := givenSharedSecretSend(t, sSend, clientKey, potp)
+	keysBytes := mixSharedSecretsForKey(serverShare, clientShare, keySize)
+
+	sw, err := NewSecureWireAES256CGM(keysBytes[0:32], keysBytes[32:32+12], sPipe)
+	if err != nil {
+		t.Error(err)
+	}
+	_, err = sw.Write([]byte{'N', 'O', 'G', 'O', 'O', 'D'})
+	if err != nil {
+		t.Error(err)
+	}
+	assertClientClosedConnection(t)
+}
+
+func TestClient_HappyPath(t *testing.T) {
+	clientSetup()
+	defer cleanup()
+
+	givenClientSolvesPuzzle(t)
+	clientKey, keySize := givenClientHello(t)
+	serverKey := givenServerShareRequest(t)
+	potp, err := cfg.GetPotpByID(cfg.ServerPotp)
+	if err != nil {
+		t.Errorf("could not retrieve potp, err=%v", err)
+	}
+
+	clientShare := givenSharedSecretReceive(t, sRecv, serverKey, nil, keySize)
+	serverShare := givenSharedSecretSend(t, sSend, clientKey, potp)
+	keysBytes := mixSharedSecretsForKey(serverShare, clientShare, keySize)
+
+	sw, err := NewSecureWireAES256CGM(keysBytes[0:32], keysBytes[32:32+12], sPipe)
+	if err != nil {
+		t.Error(err)
+	}
+	_, _ = sw.Write([]byte{'G', 'O', 'O', 'D'})
+	gb := make([]byte, 4)
+	n, err := sw.Read(gb)
+	if n != 4 || err != nil || !bytes.Equal(gb[:], []byte{'G', 'O', 'O', 'D'}) {
+		t.Error("error reading final secure_wire good confirmation")
+	}
 	assertConnectionStillOpen(t)
 }
 

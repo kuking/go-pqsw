@@ -1,6 +1,7 @@
 package wire
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"github.com/kuking/go-pqsw/config"
@@ -42,16 +43,39 @@ func NewServerHandshake(conn net.Conn, cfg *config.Config) {
 	if terminateHandshakeOnError(conn, err, "could not retrieve server potp from config") {
 		return
 	}
-	_, serr := sendSharedSecret(conn, serverKey, potp, keySize, kem)
+	clientShare, serr := sendSharedSecret(conn, serverKey, potp, keySize, kem)
 	if serr != nil && terminateHandshakeOnError(conn, serr.err, "sending shared secret to server") {
 		return
 	}
+	serverShare, serr := readSharedSecret(conn, clientKey, cfg, keySize, kem)
+	if serr != nil && terminateHandshakeOnError(conn, serr.err, "reading shared secret from server") {
+		return
+	}
 
-	//_, serr := readSharedSecret(conn, clientKey, cfg, keySize, kem)
-	//if serr != nil && terminateHandshakeOnError(conn, serr.err, "reading shared secret from server") {
-	//	return
-	//}
+	keysBytes := mixSharedSecretsForKey(serverShare, clientShare, keySize)
+	sw, err := NewSecureWireAES256CGM(keysBytes[0:32], keysBytes[32:32+12], conn)
 
+	err = clientHandshakeOverSecureWire(sw)
+	if terminateHandshakeOnError(conn, err, "handshaking over secure wire") {
+		return
+	}
+
+}
+
+func clientHandshakeOverSecureWire(sw *SecureWire) error {
+	goodRead := make([]byte, 4)
+	n, err := sw.Read(goodRead)
+	if n != len(msg.SecureWireGoodState) || bytes.Compare(msg.SecureWireGoodState, goodRead) != 0 {
+		err = errors.New("read good secure_write message invalid")
+	}
+	if err != nil {
+		return err
+	}
+	n, err = sw.Write(msg.SecureWireGoodState)
+	if n != len(msg.SecureWireGoodState) {
+		err = errors.New("could not write good secure_wire message")
+	}
+	return err
 }
 
 func readSharedSecretRequest(conn net.Conn, cfg *config.Config) (req *msg.SharedSecretRequest, err error) {
