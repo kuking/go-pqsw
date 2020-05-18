@@ -39,7 +39,7 @@ func setup() {
 
 func serverSetup() {
 	setup()
-	go newClientHandshake(sPipe, cfg)
+	go ServerHandshake(sPipe, cfg)
 }
 
 func cleanup() {
@@ -67,7 +67,7 @@ func TestServerConnect_ServerUsesDifficultyFromConfig(t *testing.T) {
 	cfg = config.NewEmpty()
 	cfg.PuzzleDifficulty = 12345
 	cPipe, sPipe = net.Pipe()
-	go newClientHandshake(sPipe, cfg)
+	go ServerHandshake(sPipe, cfg)
 	defer cleanup()
 
 	cRecv(t, &puzzleRequest)

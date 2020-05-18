@@ -14,7 +14,7 @@ func clientSetup() {
 	setup()
 	givenServerAndClientKeys()
 	givenPotpInConfig()
-	go NewServerHandshake(cPipe, cfg)
+	go ClientHandshake(cPipe, cfg)
 }
 
 func TestClient_ConnectWithNoise(t *testing.T) {

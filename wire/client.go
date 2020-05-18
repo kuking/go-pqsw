@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"github.com/kuking/go-pqsw/config"
+	"github.com/kuking/go-pqsw/cryptoutil"
 	"github.com/kuking/go-pqsw/wire/msg"
 	"github.com/kuking/go-pqsw/wire/sha512lz"
 	"github.com/pkg/errors"
@@ -13,9 +14,8 @@ import (
 
 const MaxPuzzleClientWouldAccept = 20
 
-func NewServerHandshake(conn net.Conn, cfg *config.Config) {
-
-	err := answerPuzzle(conn)
+func ClientHandshake(conn net.Conn, cfg *config.Config) (wire *SecureWire, err error) {
+	err = answerPuzzle(conn)
 	if terminateHandshakeOnError(conn, err, "answering puzzle") {
 		return
 	}
@@ -45,21 +45,25 @@ func NewServerHandshake(conn net.Conn, cfg *config.Config) {
 	}
 	clientShare, serr := sendSharedSecret(conn, serverKey, potp, keySize, kem)
 	if serr != nil && terminateHandshakeOnError(conn, serr.err, "sending shared secret to server") {
+		err = serr.err
 		return
 	}
 	serverShare, serr := readSharedSecret(conn, clientKey, cfg, keySize, kem)
 	if serr != nil && terminateHandshakeOnError(conn, serr.err, "reading shared secret from server") {
+		err = serr.err
 		return
 	}
-
 	keysBytes := mixSharedSecretsForKey(serverShare, clientShare, keySize)
-	sw, err := NewSecureWireAES256CGM(keysBytes[0:32], keysBytes[32:32+12], conn)
-
-	err = clientHandshakeOverSecureWire(sw)
+	fmt.Println("Client session key (debug, disable in prod):", cryptoutil.EncB64(keysBytes))
+	wire, err = NewSecureWireAES256CGM(keysBytes[0:32], keysBytes[32:32+12], conn)
+	if terminateHandshakeOnError(conn, err, "establishing secure_wire") {
+		return
+	}
+	err = clientHandshakeOverSecureWire(wire)
 	if terminateHandshakeOnError(conn, err, "handshaking over secure wire") {
 		return
 	}
-
+	return
 }
 
 func clientHandshakeOverSecureWire(sw *SecureWire) error {

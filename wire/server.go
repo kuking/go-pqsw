@@ -2,7 +2,6 @@ package wire
 
 import (
 	"bytes"
-	"encoding/base64"
 	"encoding/binary"
 	"fmt"
 	"github.com/cloudflare/circl/dh/sidh"
@@ -23,7 +22,7 @@ func closeListener(l net.Listener) {
 	}
 }
 
-func Listen(hostPort string, cfg *config.Config) error {
+func Listen(hostPort string, cfg *config.Config, handler func(wire *SecureWire)) error {
 	l, err := net.Listen("tcp", hostPort)
 	if err != nil {
 		return err
@@ -34,45 +33,48 @@ func Listen(hostPort string, cfg *config.Config) error {
 		if err != nil {
 			logger.Infof("Could not accept connection: %v", err)
 		} else {
-			go newClientHandshake(conn, cfg)
+			go serverHandleNewConnection(conn, cfg, handler)
 		}
-
 	}
 }
 
-func newClientHandshake(conn net.Conn, cfg *config.Config) {
+func serverHandleNewConnection(conn net.Conn, cfg *config.Config, handler func(wire *SecureWire)) {
+	sw, err := ServerHandshake(conn, cfg)
+	if err != nil {
+		return
+	}
+	handler(sw)
+}
 
+func ServerHandshake(conn net.Conn, cfg *config.Config) (wire *SecureWire, err error) {
 	_, _, serr := challengeWithPuzzle(conn, cfg)
 	if terminateHandshakeOnServerError(conn, serr, "challenging client with puzzle") {
+		err = serr.err
 		return
 	}
-
 	clientHello, serr := receiveAndVerifyClientHello(conn, cfg)
 	if terminateHandshakeOnServerError(conn, serr, "reading and checking client ClientHello message") {
+		err = serr.err
 		return
 	}
-
 	cliShare, srvShare, serr := negotiateSharedSecrets(conn, cfg, clientHello)
 	if terminateHandshakeOnServerError(conn, serr, "negotiating shared secrets") {
+		err = serr.err
 		return
 	}
-
 	keySize := calculateKeySize(clientHello)
 	keysBytes := mixSharedSecretsForKey(srvShare, cliShare, keySize)
-
-	sw, err := NewSecureWireAES256CGM(keysBytes[0:32], keysBytes[32:32+12], conn)
+	wire, err = NewSecureWireAES256CGM(keysBytes[0:32], keysBytes[32:32+12], conn)
 	if terminateHandshakeOnError(conn, err, "establishing secure wire") {
 		return
 	}
-
-	fmt.Printf("server' key: %v\n", cryptoutil.EncB64(keysBytes))
-	serr = handshakeOverSecureWire(sw)
+	fmt.Println("Server session key (debug, disable in prod):", cryptoutil.EncB64(keysBytes))
+	serr = handshakeOverSecureWire(wire)
 	if terminateHandshakeOnServerError(conn, serr, "while handshaking over secure_wire") {
+		err = serr.err
 		return
 	}
-
-	fmt.Println("Server has established a secure connection")
-	//TODO: do something with the SW object
+	return
 }
 
 func handshakeOverSecureWire(sw *SecureWire) *ServerError {
@@ -201,11 +203,8 @@ func negotiateSharedSecrets(conn net.Conn, cfg *config.Config, clientHello *msg.
 
 func sendSharedSecret(conn net.Conn, receiver *config.Key, potp *config.Potp, keySize int, kem *sidh.KEM) (res *msg.SharedSecret, serr *ServerError) {
 	potpBytes, potpOfs := potp.PickOTP(keySize)
-
 	secretsCount := calculateSharedSecretsCount(kem, keySize)
-
-	fmt.Printf("sent: otp ofs=%v len=%v val=%v\n", potpOfs, keySize, base64.StdEncoding.EncodeToString(potpBytes))
-
+	//fmt.Printf("sent: otp ofs=%v len=%v val=%v\n", potpOfs, keySize, base64.StdEncoding.EncodeToString(potpBytes))
 	res = &msg.SharedSecret{
 		Otp:    potpBytes,
 		Shared: make([][]byte, secretsCount),
@@ -232,7 +231,7 @@ func sendSharedSecret(conn net.Conn, receiver *config.Key, potp *config.Potp, ke
 		if err != nil {
 			return res, Disconnect(err, msg.DisconnectCauseNone)
 		}
-		fmt.Printf("sent: secret[%v] %v (cipher: %v)\n", secretNo, cryptoutil.EncB64(res.Shared[secretNo]), cryptoutil.EncB64(ciphertext))
+		//fmt.Printf("sent: secret[%v] %v (cipher: %v)\n", secretNo, cryptoutil.EncB64(res.Shared[secretNo]), cryptoutil.EncB64(ciphertext))
 	}
 
 	return res, nil
@@ -275,7 +274,7 @@ func readSharedSecret(conn net.Conn, receiver *config.Key, cfg *config.Config, k
 	if err != nil {
 		return res, Disconnect(err, msg.DisconnectCauseSeverMisconfiguration)
 	}
-	fmt.Printf("recv: otp ofs=%v size=%v val=%v\n", bundleDesc.PotpOffset, 32, base64.StdEncoding.EncodeToString(otpBytes))
+	//fmt.Printf("recv: otp ofs=%v size=%v val=%v\n", bundleDesc.PotpOffset, 32, base64.StdEncoding.EncodeToString(otpBytes))
 
 	res = &msg.SharedSecret{
 		Otp:    otpBytes,
@@ -289,7 +288,7 @@ func readSharedSecret(conn net.Conn, receiver *config.Key, cfg *config.Config, k
 			return res, Disconnect(err, msg.DisconnectCauseNone)
 		}
 		err = kem.Decapsulate(res.Shared[count], receiver.GetSidhPrivateKey(), receiver.GetSidhPublicKey(), cipherText)
-		fmt.Printf("recv: secret[%v] %v (cipher: %v)\n", count, cryptoutil.EncB64(res.Shared[count]), cryptoutil.EncB64(cipherText))
+		//fmt.Printf("recv: secret[%v] %v (cipher: %v)\n", count, cryptoutil.EncB64(res.Shared[count]), cryptoutil.EncB64(cipherText))
 		if err != nil {
 			return res, Disconnect(err, msg.DisconnectCauseNotEnoughSecurityRequested)
 		}
