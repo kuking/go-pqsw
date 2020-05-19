@@ -25,8 +25,8 @@ address [here](https://kukino.uk/ed@kukino.uk.pub).
 
 I am a crypto-enthusiast. For feedback and bug-fixes: you are probably right if you found a crypto mistake here.
 I claim no expertise, no PhD in Mathematics, or 25 years of experience in cryptography, nor I give any warranty implicit
-or explicit. After all disclaimers given, I would be happy to fix this, if broken, so your feedback is welcome.
-But absolutelly no warranty is given of any kind, form or type.
+or explicit. After all disclaimers given, I would be happy to fix this, if broken, so your feedback is welcomed.
+Absolutely no warranty of any kind, form or type given, implicitly or explicitly.
 
 ## Todo
 - File based potps
