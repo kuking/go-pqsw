@@ -33,8 +33,8 @@ noise, and other type of non-cryptographic attacks. The final protocol is simple
 of attack in part due to its novelty and explicit simplicity in its design. It does not depends on decades of historic
 decisions and backward compatibilities like in TLS, which can make the whole protocol more prone to exploits.
 
-Finally, unless the trade-offs are well understood and managed by the user, we encourage the user continue using TLS 
-(https://golang.org/pkg/crypto/tls/).
+Finally, unless the trade-offs are well understood and managed by the user, we recommend that the user should continue
+using TLS (https://golang.org/pkg/crypto/tls/).
 
 ## Main Features
 - Supports multiple keys/curves, so far: Sike Fp503 & Fp751 (thanks to http://github.com/cloudflare/circl).
@@ -49,7 +49,7 @@ Finally, unless the trade-offs are well understood and managed by the user, we e
     considering the keys can be sliced and cut at any byte offset, there are 10k unique keys (with less entropy).
 - Flexibility, POTPs and Public/Private Keys can be issued and shared on client-by-client basis, or per server.
 - The final wire session key is compounded with four times the secret required to build it. Each party provides a full
-  key with the KEMs and a full key-size with the Potp, this might be redundant but warranties no single bit in the final
+  key with the KEMs and a full key-size with the Potp, this might be redundant but guarantees no single bit in the final
   key will be affected by only one party nor KEMs.
     
 ## Attack preventions
