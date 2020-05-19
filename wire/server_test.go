@@ -462,7 +462,7 @@ func givenServerAndClientKeys() {
 }
 
 func givenPotpInConfig() {
-	potp, _ := cfg.CreateInPlacePotp(4096)
+	potp, _ := cfg.CreateAndAddInPlacePotp(4096)
 	cfg.ServerPotp = potp.Uuid
 	cfg.ClientPotp = potp.Uuid
 }

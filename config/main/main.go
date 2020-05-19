@@ -71,7 +71,7 @@ func doCmdConfig() {
 			}
 			cfg.ServerKey = key.Uuid
 			cfg.ClientKey = key.Uuid
-			potp, err := cfg.CreateInPlacePotp(potpSize)
+			potp, err := cfg.CreateAndAddInPlacePotp(potpSize)
 			panicOnErr(err)
 			if potp == nil {
 				fmt.Println("Could not create PSK.")
@@ -100,7 +100,7 @@ func doCmdConfig() {
 func doCmdKey() {
 	args := os.Args
 	if len(args) > 1 && args[1] == "key" {
-		if args[2] == "create" {
+		if len(args) > 2 && args[2] == "create" {
 			if len(args) == 5 {
 				keyTypeSt := args[3]
 				keyType := cryptoutil.KeyTypeInvalid
@@ -118,7 +118,12 @@ func doCmdKey() {
 				panicOnErr(err)
 				key, err := cfg.CreateAndAddKey(keyType)
 				panicOnErr(err)
-				cfg.ServerKey = key.Uuid
+				if cfg.ServerKey == "" {
+					cfg.ServerKey = key.Uuid
+				}
+				if cfg.ClientKey == "" {
+					cfg.ClientKey = key.Uuid
+				}
 				panicOnErr(cfg.SaveTo(filename))
 				fmt.Println("Key generated with keyId", key.Uuid)
 				os.Exit(0)
@@ -170,9 +175,14 @@ func doCmdPotp() {
 				filename := args[4]
 				cfg, err := config.LoadFrom(filename)
 				panicOnErr(err)
-				potp, err := cfg.CreateInPlacePotp(int(potpSize))
+				potp, err := cfg.CreateAndAddInPlacePotp(int(potpSize))
 				panicOnErr(err)
-				cfg.Potps = append(cfg.Potps, *potp)
+				if cfg.ServerPotp == "" {
+					cfg.ServerPotp = potp.Uuid
+				}
+				if cfg.ClientPotp == "" {
+					cfg.ClientPotp = potp.Uuid
+				}
 				err = cfg.SaveTo(filename)
 				panicOnErr(err)
 				fmt.Printf("potp of %v bytes created, with uuid %v\n", potpSize, potp.Uuid)

@@ -213,15 +213,15 @@ func (c *Config) GetPotpByID(potpId string) (*Potp, error) {
 	return nil, errors.Errorf("PotpId: %v not found.", potpId)
 }
 
-func (c *Config) CreateInPlacePotp(size int) (*Potp, error) {
+func (c *Config) CreateAndAddInPlacePotp(size int) (*Potp, error) {
 	b := cryptoutil.RandBytes(size)
 	uuid := base64.StdEncoding.EncodeToString(cryptoutil.QuickSha256(b))
-	psk := Potp{
+	potp := Potp{
 		Uuid: uuid,
 		Body: base64.StdEncoding.EncodeToString(b),
 	}
-	c.Potps = append(c.Potps, psk)
-	return &psk, nil
+	c.Potps = append(c.Potps, potp)
+	return &potp, nil
 }
 
 func NewEmpty() *Config {
