@@ -31,6 +31,9 @@ win: release
 test:
 	go test ./...
 
+bench:
+	go test ./... -run=Benchmark -bench=. -benchmem
+
 coverage:
 	go test -cover -coverprofile=coverage.out ./...
 	go tool cover -func=coverage.out

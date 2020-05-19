@@ -2,6 +2,8 @@ package cryptoutil
 
 import (
 	"bytes"
+	"crypto/rand"
+	"github.com/cloudflare/circl/dh/sidh"
 	"testing"
 )
 
@@ -74,4 +76,34 @@ func TestKeyId(t *testing.T) {
 	if len(SidhKeyId(pub)) != 44 {
 		t.Fatal("this should look like an base64 of length 44")
 	}
+}
+
+func BenchmarkSidhNewPair_Fp751(b *testing.B) {
+	SidhNewPair(KeyTypeSidhFp751)
+}
+
+func BenchmarkSidhNewPair_Fp503(b *testing.B) {
+	SidhNewPair(KeyTypeSidhFp503)
+}
+
+func commonBenchKEM(kem *sidh.KEM, pvt *sidh.PrivateKey, pub *sidh.PublicKey, b *testing.B) {
+	cipherText := make([]byte, kem.CiphertextSize())
+	secret := make([]byte, kem.SharedSecretSize())
+	for i := 0; i < b.N; i++ {
+		kem.Encapsulate(cipherText, secret, pub)
+		kem.Decapsulate(secret, pvt, pub, cipherText)
+	}
+}
+
+func BenchmarkKEM_Fp751(b *testing.B) {
+	pvt, pub, _ := SidhNewPair(KeyTypeSidhFp751)
+	kem := sidh.NewSike751(rand.Reader)
+	commonBenchKEM(kem, pvt, pub, b)
+
+}
+
+func BenchmarkKEM_Fp503(b *testing.B) {
+	pvt, pub, _ := SidhNewPair(KeyTypeSidhFp503)
+	kem := sidh.NewSike503(rand.Reader)
+	commonBenchKEM(kem, pvt, pub, b)
 }
