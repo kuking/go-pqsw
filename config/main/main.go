@@ -1,11 +1,13 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"github.com/kuking/go-pqsw/config"
 	"github.com/kuking/go-pqsw/cryptoutil"
 	"log"
 	"os"
+	"strconv"
 )
 
 func saveConfigAndFinish(config *config.Config, file string) {
@@ -20,6 +22,7 @@ func main() {
 	doCmdHelp()
 	doCmdConfig()
 	doCmdKey()
+	doCmdPotp()
 	// otherwise
 	showGeneralHelp()
 }
@@ -43,6 +46,9 @@ func doCmdHelp() {
 		if len(args) == 4 && args[2] == "key" && args[3] == "delete" {
 			showKeyDeleteHelp()
 		}
+		if len(args) == 3 && args[2] == "potp" {
+			showPotpHelp()
+		}
 	}
 }
 
@@ -54,14 +60,15 @@ func doCmdConfig() {
 		}
 		if len(args) == 4 && args[2] == "vanilla" {
 			filename := args[3]
+			potpSize := 1024
+			keyType := cryptoutil.KeyTypeSidhFp503
 			cfg := config.NewEmpty()
-			key, err := cfg.CreateAndAddKey(cryptoutil.KeyTypeSidhFp751)
+			key, err := cfg.CreateAndAddKey(keyType)
 			panicOnErr(err)
 			if key == nil {
 				fmt.Println("Key could not be created.")
 				os.Exit(1)
 			}
-			potpSize := 1024
 			cfg.ServerKey = key.Uuid
 			cfg.ClientKey = key.Uuid
 			potp, err := cfg.CreateInPlacePotp(potpSize)
@@ -93,27 +100,31 @@ func doCmdConfig() {
 func doCmdKey() {
 	args := os.Args
 	if len(args) > 1 && args[1] == "key" {
-		if len(args) == 5 && args[2] == "create" {
-			keyTypeSt := args[3]
-			keyType := cryptoutil.KeyTypeInvalid
-			for k, v := range cryptoutil.KeyTypeAsString {
-				if keyTypeSt == v {
-					keyType = k
+		if args[2] == "create" {
+			if len(args) == 5 {
+				keyTypeSt := args[3]
+				keyType := cryptoutil.KeyTypeInvalid
+				for k, v := range cryptoutil.KeyTypeAsString {
+					if keyTypeSt == v {
+						keyType = k
+					}
 				}
-			}
-			if keyType == cryptoutil.KeyTypeInvalid {
-				panic(fmt.Sprintf("I don't know how to generate a key of type: %s", keyTypeSt))
-			}
-			filename := args[4]
+				if keyType == cryptoutil.KeyTypeInvalid {
+					panic(fmt.Sprintf("I don't know how to generate a key of type: %s", keyTypeSt))
+				}
+				filename := args[4]
 
-			cfg, err := config.LoadFrom(filename)
-			panicOnErr(err)
-			key, err := cfg.CreateAndAddKey(keyType)
-			panicOnErr(err)
-			cfg.ServerKey = key.Uuid
-			panicOnErr(cfg.SaveTo(filename))
-			fmt.Println("Key generated with keyId", key.Uuid)
-			os.Exit(0)
+				cfg, err := config.LoadFrom(filename)
+				panicOnErr(err)
+				key, err := cfg.CreateAndAddKey(keyType)
+				panicOnErr(err)
+				cfg.ServerKey = key.Uuid
+				panicOnErr(cfg.SaveTo(filename))
+				fmt.Println("Key generated with keyId", key.Uuid)
+				os.Exit(0)
+			} else {
+				showKeyCreateHelp()
+			}
 		}
 		if len(args) == 5 && args[2] == "delete" {
 			uuid := args[3]
@@ -145,6 +156,35 @@ func doCmdKey() {
 	}
 }
 
+func doCmdPotp() {
+	args := os.Args
+	if len(args) > 1 && args[1] == "potp" {
+		if len(args) > 2 && args[2] == "create" {
+			if len(args) == 5 {
+				potpSize, err := strconv.ParseInt(args[3], 10, 32)
+				panicOnErr(err)
+				if potpSize < 64 || potpSize > 64*1024 {
+					err = errors.New("potp should be between 64 bytes and 64 kbytes")
+					panicOnErr(err)
+				}
+				filename := args[4]
+				cfg, err := config.LoadFrom(filename)
+				panicOnErr(err)
+				potp, err := cfg.CreateInPlacePotp(int(potpSize))
+				panicOnErr(err)
+				cfg.Potps = append(cfg.Potps, *potp)
+				err = cfg.SaveTo(filename)
+				panicOnErr(err)
+				fmt.Printf("potp of %v bytes created, with uuid %v\n", potpSize, potp.Uuid)
+			} else {
+				showPotpCreateHelp()
+			}
+		} else {
+			showPotpHelp()
+		}
+		os.Exit(0)
+	}
+}
 func panicOnErr(err error) {
 	if err != nil {
 		panic(err)
@@ -152,7 +192,7 @@ func panicOnErr(err error) {
 }
 
 func showGeneralHelp() {
-	fmt.Println(`Post Quantum Secure Wire Configuration Management
+	fmt.Println(`Post Quantum Secure Wire Configuration Tool 
 
 Usage:
 
@@ -162,10 +202,10 @@ The commands are:
 
          config	   manages configuration files
          key       manages keys in the key store, including creation.
-         psk       manages pre shared keys 
+         potp      manages pragmatic one-time-pads
          uniq      manages unique ids memories
 
-Use "ks help <command>" for more information about a command.`)
+Use "pqswcfg help <command>" for more information about a command.`)
 	os.Exit(0)
 }
 
@@ -185,7 +225,7 @@ func showKeyHelp() {
 
 Usage: 
 
-         ks key <command> [arguments]
+         pqswcfg key <command> [arguments]
 
 The commands are:
 
@@ -193,15 +233,12 @@ The commands are:
          delete    deletes a key
          list      list all the keys
          import    imports a key
-         export    exports a key
-
-Use 
-ks key del <key-id> `)
+         export    exports a key`)
 	os.Exit(0)
 }
 
 func showKeyCreateHelp() {
-	fmt.Println("Usage: ks key create <type> <config file>")
+	fmt.Println("Usage: pqswcfg key create <type> <config file>")
 	fmt.Print("\nSupported key types: ")
 	for _, v := range cryptoutil.KeyTypeAsString {
 		fmt.Print(v, " ")
@@ -211,5 +248,23 @@ func showKeyCreateHelp() {
 }
 
 func showKeyDeleteHelp() {
-	fmt.Println("Usage: ks key delete <key id> <config file>")
+	fmt.Println("Usage: pqswcfg key delete <key id> <config file>")
+}
+
+func showPotpHelp() {
+	fmt.Println(`
+
+Usage:
+
+         pqswcfg potp <command> [arguments]
+
+The commands are:
+
+         create    creates a new potp of size in bytes provided
+         delete    deletes a potp
+         list      lists all potps`)
+}
+
+func showPotpCreateHelp() {
+	fmt.Println("Usage: pqswcfg potp create <byte-size> <config file>")
 }

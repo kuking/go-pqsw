@@ -20,7 +20,6 @@ type Key struct {
 
 type Potp struct {
 	Uuid string
-	Path string
 	Body string
 }
 
@@ -219,7 +218,6 @@ func (c *Config) CreateInPlacePotp(size int) (*Potp, error) {
 	uuid := base64.StdEncoding.EncodeToString(cryptoutil.QuickSha256(b))
 	psk := Potp{
 		Uuid: uuid,
-		Path: "",
 		Body: base64.StdEncoding.EncodeToString(b),
 	}
 	c.Potps = append(c.Potps, psk)
