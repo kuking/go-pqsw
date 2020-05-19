@@ -57,13 +57,20 @@ Finally, unless the trade-offs are well understood and managed by the user, we e
   - Private key compromise by using pragmatic One Time Pads (POTPs)
   - Broken curves by using pragmatic One Time Pads (POTPs)
   - Denial of Service, Server CPU Authentication flooding, client is required to calculate a post quantum expensive 
-    calculation, also known as Client Puzzle or Proof-of-Work (sha512 leading zeros at the moment.) before the server
-    commits resources or discloses information.
-  - Ciphertext modification integrity by using CGM
+    calculation, also known as Client Puzzle or Proof-of-Work before the server commits resources or discloses any
+    information. At the moment, the challenge puzzle is to calculate a SHA512 sum with _n_ leading zeros, similar to the
+    Bitcoin complexity proof-of-work used to sign or _mine_ blocks.
+  - Ciphertext modification integrity by using CGM.
+  - Any ciphertext integrity failure triggers a disconnection. (this can be a denial-of-service attack, but we assume if
+    the attacker is sophisticated enough to be able to modify the TCP stream, the attacker has enough power to impeed 
+    communication, nevertheless the stream integrity stays warrantied.)
   - PQ-AES Future proof attack: Triple-AES256 using unique full 768 bits of entropy in the key (plus 96*3 of nonce seed)
   - Kem/Sike broken: considering how new the scheme is, it is possible an attack is discovered in the short to medium 
     time. The mitigation to this risk, is to facilitate using the previously described Pragmatic One Time Pads (POTP). 
   - In a world with AES-256 compromised, with a flip in the configuration file, a Triple AES-256 can be enabled.
+  - potp size can not be derived by looking at potps offsets in the un-secure wire during the key agreement stage. The
+    offsets are expected to be modulo with the potp length. i.e. if the potp has 1024 bytes, the offset 1025 is valid, 
+    which would be the same as offset 1, or 2046. Therefore, the real size of the potp is not implied by observation.
 
 ## Non-core features
 - CLI for handling keys, potps, and other configurations, see [pqswcfg documentations](pqswcfg.md)
