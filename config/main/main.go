@@ -61,17 +61,18 @@ func doCmdConfig() {
 				fmt.Println("Key could not be created.")
 				os.Exit(1)
 			}
+			potpSize := 1024
 			cfg.ServerKey = key.Uuid
 			cfg.ClientKey = key.Uuid
-			potp, err := cfg.CreateInPlacePotp(1 * 4096)
+			potp, err := cfg.CreateInPlacePotp(potpSize)
 			panicOnErr(err)
 			if potp == nil {
 				fmt.Println("Could not create PSK.")
 			}
 			cfg.ServerPotp = potp.Uuid
 			cfg.ClientPotp = potp.Uuid
-			fmt.Printf("Vanilla config created with Fp751 key '%v' and a PSK of 4096 bits '%v'\n",
-				key.Uuid, potp.Uuid)
+			fmt.Printf("Vanilla config created with Fp751 key '%v' and a PSK of %v bits '%v'\n",
+				key.Uuid, potpSize*8, potp.Uuid)
 			panicOnErr(err)
 			saveConfigAndFinish(cfg, filename)
 		}
