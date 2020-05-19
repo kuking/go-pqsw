@@ -54,6 +54,7 @@ using TLS (https://golang.org/pkg/crypto/tls/).
     
 ## Attack preventions
   - Replay attack via persistent bloom filter for KEM secrets and POTPs. (TBI)
+  - Forward secrecy, transient session keys generated without involving any previous state.
   - Private key compromise by using pragmatic One Time Pads (POTPs)
   - Broken curves by using pragmatic One Time Pads (POTPs)
   - Denial of Service, Server CPU Authentication flooding, client is required to calculate a post quantum expensive 
@@ -66,7 +67,9 @@ using TLS (https://golang.org/pkg/crypto/tls/).
     communication, nevertheless the stream integrity stays warrantied.)
   - PQ-AES Future proof attack: Triple-AES256 using unique full 768 bits of entropy in the key (plus 96*3 of nonce seed)
   - Kem/Sike broken: considering how new the scheme is, it is possible an attack is discovered in the short to medium 
-    time. The mitigation to this risk, is to facilitate using the previously described Pragmatic One Time Pads (POTP). 
+    time. The mitigation to this risk, is to facilitate using the previously described Pragmatic One Time Pads (POTP).
+    Multiple KEM envelopes are used, therefore for an attacker to break a session key, he might need to break multiples
+    KEM envelopes, typically 6 KEM when using Fp503.
   - In a world with AES-256 compromised, with a flip in the configuration file, a Triple AES-256 can be enabled.
   - potp size can not be derived by looking at potps offsets in the un-secure wire during the key agreement stage. The
     offsets are expected to be modulo with the potp length. i.e. if the potp has 1024 bytes, the offset 1025 is valid, 
