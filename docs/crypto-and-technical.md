@@ -37,7 +37,7 @@ Finally, unless the trade-offs are well understood and managed by the user, we r
 using TLS (https://golang.org/pkg/crypto/tls/).
 
 ## Main Features
-- Supports multiple keys/curves, so far: Sike Fp503 & Fp751 (thanks to http://github.com/cloudflare/circl).
+- Supports multiple keys/curves, so far: Sike Fp434, Fp503 & Fp751 (thanks to http://github.com/cloudflare/circl).
 - Simple implicit key negotiation (facilitating potp & key-rotation)
 - Establishes a CGM AEAD AES-256 channel (or three)
 - Pragmatic One-Time-Pads (POTP), it can obtain key-secret from a pre-agreed shared random huge secret. This might

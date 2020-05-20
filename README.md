@@ -5,7 +5,7 @@ triple AES-256 (more on this later), KEM SIDH Sike using up to Fp751 curves, etc
 
 __Usages:__ Drop-in replacement for ssh/ssl tunnels and TLS connections. Can be useful if you want to build a service
 and would prefer to avoid TLS, or if you want to tunnel an existing service via a post-quantum secure channel (see 
-author's disclaimer below).
+author's disclaimer below). Quick [usage walkthrough here](docs/usages.md).
 
 For details on the key-agreement protocol and some technical decisions, please read the
 [cryptographic details and implementation document](docs/crypto-and-technical.md) (you will also find the main features

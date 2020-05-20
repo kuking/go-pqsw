@@ -1,13 +1,16 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/kuking/go-pqsw/config"
 	"github.com/kuking/go-pqsw/cryptoutil"
+	"io/ioutil"
 	"log"
 	"os"
 	"strconv"
+	"strings"
 )
 
 func saveConfigAndFinish(config *config.Config, file string) {
@@ -157,6 +160,50 @@ func doCmdKey() {
 			}
 			os.Exit(0)
 		}
+		if len(args) == 5 && args[2] == "export" {
+			cfg, err := config.LoadFrom(args[4])
+			fullKey := args[3][0:5] == "full@"
+			pubKey := args[3][0:4] == "pub@"
+			if !fullKey && !pubKey {
+				fmt.Println("invalid key format, it should be i.e. full@1 or pub@2")
+				os.Exit(1)
+			}
+			keyNo, err := strconv.ParseInt(args[3][strings.Index(args[3], "@")+1:], 10, 16)
+			panicOnErr(err)
+			for n, key := range cfg.Keys {
+				if n+1 == int(keyNo) {
+					if pubKey {
+						key.Pvt = ""
+					}
+					jsonb, err := json.MarshalIndent(key, "", "  ")
+					panicOnErr(err)
+					fmt.Println(string(jsonb))
+				}
+			}
+			os.Exit(0)
+		}
+		if len(args) == 4 && args[2] == "import" {
+			cfg, err := config.LoadFrom(args[3])
+			panicOnErr(err)
+			key := config.Key{}
+			bytes, err := ioutil.ReadAll(os.Stdin)
+			panicOnErr(err)
+			panicOnErr(json.Unmarshal(bytes, &key))
+			if key.Pub == "" || key.Type == "" {
+				panicOnErr(errors.New("it does not look like a key"))
+			}
+			for cfg.DeleteKeyByUUID(key.Uuid) {
+			}
+			cfg.Keys = append(cfg.Keys, key)
+			if cfg.ClientKey == "" {
+				cfg.ClientKey = key.Uuid
+			}
+			if cfg.ServerKey == "" {
+				cfg.ServerKey = key.Uuid
+			}
+			panicOnErr(cfg.SaveTo(args[3]))
+			os.Exit(0)
+		}
 		showKeyHelp()
 	}
 }
@@ -186,9 +233,46 @@ func doCmdPotp() {
 				err = cfg.SaveTo(filename)
 				panicOnErr(err)
 				fmt.Printf("potp of %v bytes created, with uuid %v\n", potpSize, potp.Uuid)
+				os.Exit(0)
 			} else {
 				showPotpCreateHelp()
 			}
+		}
+		if len(args) == 5 && args[2] == "export" {
+			cfg, err := config.LoadFrom(args[4])
+			potpNo, err := strconv.ParseInt(args[3][1:], 10, 16)
+			panicOnErr(err)
+			for n, key := range cfg.Potps {
+				if n+1 == int(potpNo) {
+					jsonb, err := json.MarshalIndent(key, "", "  ")
+					panicOnErr(err)
+					fmt.Println(string(jsonb))
+				}
+			}
+			os.Exit(0)
+		}
+		if len(args) == 4 && args[2] == "import" {
+			cfg, err := config.LoadFrom(args[3])
+			panicOnErr(err)
+			potp := config.Potp{}
+			bytes, err := ioutil.ReadAll(os.Stdin)
+			panicOnErr(err)
+			panicOnErr(json.Unmarshal(bytes, &potp))
+			if potp.Body == "" {
+				panicOnErr(errors.New("it does not look like a potp"))
+			}
+			for cfg.DeletePotpByUUID(potp.Uuid) {
+			}
+			cfg.Potps = append(cfg.Potps, potp)
+			if cfg.ClientPotp == "" {
+				cfg.ClientPotp = potp.Uuid
+			}
+			if cfg.ServerPotp == "" {
+				cfg.ServerPotp = potp.Uuid
+			}
+			panicOnErr(cfg.SaveTo(args[3]))
+			os.Exit(0)
+
 		} else {
 			showPotpHelp()
 		}
@@ -272,6 +356,8 @@ The commands are:
 
          create    creates a new potp of size in bytes provided
          delete    deletes a potp
+		 export    exports a potp
+         import    imports a potp
          list      lists all potps`)
 }
 

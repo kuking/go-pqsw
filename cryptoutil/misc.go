@@ -17,9 +17,9 @@ const (
 )
 
 var KeyTypeAsString = map[KeyType]string{
-	KeyTypeSidhFp434: "SIDH_FP434",
-	KeyTypeSidhFp503: "SIDH_FP503",
-	KeyTypeSidhFp751: "SIDH_FP751",
+	KeyTypeSidhFp434: "SIKE_FP434",
+	KeyTypeSidhFp503: "SIKE_FP503",
+	KeyTypeSidhFp751: "SIKE_FP751",
 }
 
 func QuickSha256(b []byte) []byte {

@@ -215,6 +215,20 @@ func (c *Config) GetPotpByID(potpId string) (*Potp, error) {
 	return nil, errors.Errorf("PotpId: %v not found.", potpId)
 }
 
+func (c *Config) DeletePotpByUUID(uuid string) bool {
+	delIdx := -1
+	for idx, potp := range c.Potps {
+		if potp.Uuid == uuid {
+			delIdx = idx
+		}
+	}
+	if delIdx == -1 {
+		return false
+	}
+	c.Potps = append(c.Potps[:delIdx], c.Potps[delIdx+1:]...)
+	return true
+}
+
 func (c *Config) CreateAndAddInPlacePotp(size int) (*Potp, error) {
 	b := cryptoutil.RandBytes(size)
 	uuid := base64.StdEncoding.EncodeToString(cryptoutil.QuickSha256(b))
