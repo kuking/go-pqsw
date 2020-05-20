@@ -3,8 +3,9 @@ Implementation in Go language of a secure-wire, using safe post-quantum cryptogr
 key-agreement protocol which includes some future proof features. i.e. client puzzle challenge, pragmatic one-time-pad, 
 triple AES-256 (more on this later), KEM SIDH Sike using up to Fp751 curves, etc. 
 
-Implementation is well tested with a minimal attack surface, if the used cryptographic primitives and the integrations 
-decisions are to be trusted, it is safe to say pqsw can be put forward into a strict crypto analysis.
+__Usages:__ Drop-in replacement for ssh/ssl tunnels and TLS connections. Can be useful if you want to build a service
+and would prefer to avoid TLS, or if you want to tunnel an existing service via a post-quantum secure channel (see 
+author's disclaimer below).
 
 For details on the key-agreement protocol and some technical decisions, please read the
 [cryptographic details and implementation document](docs/crypto-and-technical.md) (you will also find the main features
