@@ -71,6 +71,8 @@ func (k *Key) GetSidhPublicKey() *sidh.PublicKey {
 
 func (k *Key) GetKemSike() (*sidh.KEM, error) {
 	switch k.GetKeyType() {
+	case cryptoutil.KeyTypeSidhFp434:
+		return sidh.NewSike434(rand.Reader), nil
 	case cryptoutil.KeyTypeSidhFp503:
 		return sidh.NewSike503(rand.Reader), nil
 	case cryptoutil.KeyTypeSidhFp751:

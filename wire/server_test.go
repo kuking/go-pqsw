@@ -262,7 +262,7 @@ func TestServerSharedSecretRequest_InvalidPotpId(t *testing.T) {
 	sharedSecretBundleDescResponse = msg.SharedSecretBundleDescriptionResponse{
 		PotpIdUsed:   [32]byte{},
 		PotpOffset:   123,
-		SecretsCount: 3,
+		SecretsCount: 2,
 		SecretSize:   402,
 	}
 	cSend(t, sharedSecretBundleDescResponse)

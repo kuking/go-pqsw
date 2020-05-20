@@ -10,12 +10,14 @@ type KeyType uint8
 
 const (
 	KeyTypeUnknown   KeyType = 255
-	KeyTypeInvalid   KeyType = 0
-	KeyTypeSidhFp503 KeyType = 1
-	KeyTypeSidhFp751 KeyType = 2
+	KeyTypeInvalid   KeyType = iota
+	KeyTypeSidhFp434 KeyType = iota
+	KeyTypeSidhFp503 KeyType = iota
+	KeyTypeSidhFp751 KeyType = iota
 )
 
 var KeyTypeAsString = map[KeyType]string{
+	KeyTypeSidhFp434: "SIDH_FP434",
 	KeyTypeSidhFp503: "SIDH_FP503",
 	KeyTypeSidhFp751: "SIDH_FP751",
 }

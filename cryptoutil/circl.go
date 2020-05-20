@@ -8,7 +8,10 @@ import (
 )
 
 func SidhNewPair(keyType KeyType) (pvt *sidh.PrivateKey, pub *sidh.PublicKey, err error) {
-	if keyType == KeyTypeSidhFp503 {
+	if keyType == KeyTypeSidhFp434 {
+		pvt = sidh.NewPrivateKey(sidh.Fp434, sidh.KeyVariantSike)
+		pub = sidh.NewPublicKey(sidh.Fp434, sidh.KeyVariantSike)
+	} else if keyType == KeyTypeSidhFp503 {
 		pvt = sidh.NewPrivateKey(sidh.Fp503, sidh.KeyVariantSike)
 		pub = sidh.NewPublicKey(sidh.Fp503, sidh.KeyVariantSike)
 	} else if keyType == KeyTypeSidhFp751 {
@@ -67,7 +70,9 @@ func SidhBytesFromPublicKey(pvt *sidh.PublicKey) []byte {
 
 func SidhPrivateKeyFromBytes(b []byte) *sidh.PrivateKey {
 	var pvt *sidh.PrivateKey
-	if len(b) == 56 {
+	if len(b) == 44 {
+		pvt = sidh.NewPrivateKey(sidh.Fp434, sidh.KeyVariantSike)
+	} else if len(b) == 56 {
 		pvt = sidh.NewPrivateKey(sidh.Fp503, sidh.KeyVariantSike)
 	} else if len(b) == 80 {
 		pvt = sidh.NewPrivateKey(sidh.Fp751, sidh.KeyVariantSike)
@@ -81,16 +86,18 @@ func SidhPrivateKeyFromBytes(b []byte) *sidh.PrivateKey {
 }
 
 func SidhPublicKeyFromBytes(b []byte) *sidh.PublicKey {
-	var pvt *sidh.PublicKey
-	if len(b) == 378 {
-		pvt = sidh.NewPublicKey(sidh.Fp503, sidh.KeyVariantSike)
+	var pub *sidh.PublicKey
+	if len(b) == 330 {
+		pub = sidh.NewPublicKey(sidh.Fp434, sidh.KeyVariantSike)
+	} else if len(b) == 378 {
+		pub = sidh.NewPublicKey(sidh.Fp503, sidh.KeyVariantSike)
 	} else if len(b) == 564 {
-		pvt = sidh.NewPublicKey(sidh.Fp751, sidh.KeyVariantSike)
+		pub = sidh.NewPublicKey(sidh.Fp751, sidh.KeyVariantSike)
 	} else {
 		return nil
 	}
-	if pvt.Import(b) != nil {
+	if pub.Import(b) != nil {
 		return nil
 	}
-	return pvt
+	return pub
 }
