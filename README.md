@@ -13,12 +13,8 @@ and attack prevention mechanisms in both the cryptographic protocol design and i
 message details [in the protocol document](docs/protocol.md).
 
 The  easiest way to try this, is to use the tool `pqswtun` which can be used to establish a tunnel like in the command
-`ssh -L`, it has to be run twice in two different modes, entry and exit node. i.e. 
-`(local)$ pqswtun entry localhost:2222:remote:4444` &  `(remote)$ pqswtun exit 4444:localhost:22`. 
-Please read in more detail the [pqswtun documentation](docs/pqswtun.md).
-
-Finally, the secure-wire is driven by a configuration file holding keys, potps, etc. please find its details in the
-[pqswcfg documentation](docs/pqswcfg.md)
+`ssh -L`. Please read in more detail the [pqswtun documentation](docs/pqswtun.md). Finally, the secure-wire is driven by
+a configuration file holding keys, potps, etc. please find its details in the [pqswcfg documentation](docs/pqswcfg.md)
 
 ##  Author
 Eduardo E.S. Riccardi, you can contact me via [linkedin](https://uk.linkedin.com/in/kukino), or you could find my email
@@ -34,6 +30,5 @@ Absolutely no warranty of any kind, form or type given, implicitly or explicitly
 - Potps and Kem replay prevention (minor crypto implication as both parties choose a potp and kems)
 - Increment puzzle difficulty on auth failure
 - Demo golang program
-- More tutorials
 - Kill signal to reload config
 - Triple AES256
