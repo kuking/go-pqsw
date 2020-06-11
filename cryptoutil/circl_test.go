@@ -80,7 +80,7 @@ func commonBenchKEM(kem *sidh.KEM, pvt *sidh.PrivateKey, pub *sidh.PublicKey, b 
 
 func BenchmarkKEM_Fp434(b *testing.B) {
 	pvt, pub, _ := SidhNewPair(KeyTypeSidhFp434)
-	kem := sidh.NewSike503(rand.Reader)
+	kem := sidh.NewSike434(rand.Reader)
 	commonBenchKEM(kem, pvt, pub, b)
 }
 
