@@ -1,8 +1,6 @@
 
 
-.PHONY: clean build test release
-
-all: clean release coverage
+all: clean build test bench release coverage
 
 clean:
 	go clean -testcache -cache
