@@ -2,6 +2,7 @@ package cryptoutil
 
 import (
 	"crypto/rand"
+	"encoding/base64"
 	"github.com/cloudflare/circl/dh/sidh"
 	frodo "github.com/kuking/go-frodokem"
 	"github.com/pkg/errors"
@@ -31,7 +32,10 @@ func GenKey(keyType KeyType) (pvt []byte, pub []byte, err error) {
 	var sikePvt *sidh.PrivateKey
 	var sikePub *sidh.PublicKey
 
-	if keyType == KeyTypeSidhFp503 {
+	if keyType == KeyTypeSidhFp434 {
+		sikePvt = sidh.NewPrivateKey(sidh.Fp434, sidh.KeyVariantSike)
+		sikePub = sidh.NewPublicKey(sidh.Fp434, sidh.KeyVariantSike)
+	} else if keyType == KeyTypeSidhFp503 {
 		sikePvt = sidh.NewPrivateKey(sidh.Fp503, sidh.KeyVariantSike)
 		sikePub = sidh.NewPublicKey(sidh.Fp503, sidh.KeyVariantSike)
 	} else if keyType == KeyTypeSidhFp751 {
@@ -61,5 +65,29 @@ func GenKey(keyType KeyType) (pvt []byte, pub []byte, err error) {
 		err = errors.New("This code is inconsistent, maybe needs more work.")
 	}
 
+	return
+}
+
+func PublicKeyAsString(pub []byte) string {
+	return base64.StdEncoding.EncodeToString(pub)
+}
+
+func PrivateKeyAsString(pub []byte) string {
+	return base64.StdEncoding.EncodeToString(pub)
+}
+
+func PrivateKeyFromString(key string) (pvt []byte) {
+	pvt, err := base64.StdEncoding.DecodeString(key)
+	if err != nil || len(pvt) < 10 {
+		return nil
+	}
+	return
+}
+
+func PublicKeyFromString(key string) (pub []byte) {
+	pub, err := base64.StdEncoding.DecodeString(key)
+	if err != nil || len(pub) < 10 {
+		return nil
+	}
 	return
 }

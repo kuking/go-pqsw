@@ -375,9 +375,11 @@ func TestServerSharedSecretRequest_ClientAndServerExchangeSharedSecret(t *testin
 	if kem.CiphertextSize() != len(ciphertext) {
 		t.Error("secret size sent by server is wrong")
 	}
+	clientSikePvt := cryptoutil.SikePrivateKeyFromBytes(clientKey.GetPrivateKey())
+	serverSikePub := cryptoutil.SikePublicKeyFromBytes(clientKey.GetPublicKey())
 	for i := 0; i < int(sharedSecretBundleDescResponse.SecretsCount); i++ {
 		cRecv(t, ciphertext)
-		err := kem.Decapsulate(ciphertext, clientKey.GetSidhPrivateKey(), serverKey.GetSidhPublicKey(), ciphertext)
+		err := kem.Decapsulate(ciphertext, clientSikePvt, serverSikePub, ciphertext)
 		if err != nil {
 			t.Error("kem failed to decapsulate", err)
 		}
@@ -551,10 +553,11 @@ func givenSharedSecretSend(t *testing.T, send func(t *testing.T, msg interface{}
 		Otp:    potpBytes,
 		Shared: make([][]byte, clientSecretsCount),
 	}
+	receiverSikePub := cryptoutil.SikePublicKeyFromBytes(receiverKey.GetPublicKey())
 	for secretNo := 0; secretNo < clientSecretsCount; secretNo++ {
 		sharedSecret.Shared[secretNo] = make([]byte, kem.SharedSecretSize())
 		ciphertext := make([]byte, kem.CiphertextSize())
-		err := kem.Encapsulate(ciphertext, sharedSecret.Shared[secretNo], receiverKey.GetSidhPublicKey())
+		err := kem.Encapsulate(ciphertext, sharedSecret.Shared[secretNo], receiverSikePub)
 		if err != nil {
 			panic(err)
 		}
@@ -589,10 +592,12 @@ func givenSharedSecretReceive(t *testing.T, recv func(t *testing.T, msg interfac
 	if kem.CiphertextSize() != len(ciphertext) {
 		t.Error("secret size sent by server is wrong")
 	}
+	receiverSikePvt := cryptoutil.SikePrivateKeyFromBytes(receiverKey.GetPrivateKey())
+	receiverSikePub := cryptoutil.SikePublicKeyFromBytes(receiverKey.GetPublicKey())
 	for i := 0; i < int(sharedSecretBundleDescResponse.SecretsCount); i++ {
 		recv(t, ciphertext)
 		sharedSecret.Shared[i] = make([]byte, kem.SharedSecretSize())
-		err := kem.Decapsulate(sharedSecret.Shared[i], receiverKey.GetSidhPrivateKey(), receiverKey.GetSidhPublicKey(), ciphertext)
+		err := kem.Decapsulate(sharedSecret.Shared[i], receiverSikePvt, receiverSikePub, ciphertext)
 		if err != nil {
 			t.Error("kem failed to decapsulate", err)
 		}

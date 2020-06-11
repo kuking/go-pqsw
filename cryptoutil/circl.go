@@ -28,32 +28,8 @@ func SidhNewPair(keyType KeyType) (pvt *sidh.PrivateKey, pub *sidh.PublicKey, er
 	return pvt, pub, err
 }
 
-func SidhPrivateKeyFromString(key string) *sidh.PrivateKey {
-	b, err := base64.StdEncoding.DecodeString(key)
-	if err != nil {
-		return nil
-	}
-	return SidhPrivateKeyFromBytes(b)
-}
-
-func SidhPublicKeyFromString(key string) *sidh.PublicKey {
-	b, err := base64.StdEncoding.DecodeString(key)
-	if err != nil {
-		return nil
-	}
-	return SidhPublicKeyFromBytes(b)
-}
-
-func SidhPublicKeyAsString(pub *sidh.PublicKey) string {
-	return base64.StdEncoding.EncodeToString(SidhBytesFromPublicKey(pub))
-}
-
-func SidhPrivateKeyAsString(pub *sidh.PrivateKey) string {
-	return base64.StdEncoding.EncodeToString(SidhBytesFromPrivateKey(pub))
-}
-
-func SidhKeyId(pub *sidh.PublicKey) string {
-	return base64.StdEncoding.EncodeToString(QuickSha256(SidhBytesFromPublicKey(pub)))
+func KeyId(pub []byte) string {
+	return base64.StdEncoding.EncodeToString(QuickSha256(pub))
 }
 
 func SidhBytesFromPrivateKey(pvt *sidh.PrivateKey) []byte {
@@ -68,7 +44,7 @@ func SidhBytesFromPublicKey(pvt *sidh.PublicKey) []byte {
 	return b
 }
 
-func SidhPrivateKeyFromBytes(b []byte) *sidh.PrivateKey {
+func SikePrivateKeyFromBytes(b []byte) *sidh.PrivateKey {
 	var pvt *sidh.PrivateKey
 	if len(b) == 44 {
 		pvt = sidh.NewPrivateKey(sidh.Fp434, sidh.KeyVariantSike)
@@ -85,7 +61,7 @@ func SidhPrivateKeyFromBytes(b []byte) *sidh.PrivateKey {
 	return pvt
 }
 
-func SidhPublicKeyFromBytes(b []byte) *sidh.PublicKey {
+func SikePublicKeyFromBytes(b []byte) *sidh.PublicKey {
 	var pub *sidh.PublicKey
 	if len(b) == 330 {
 		pub = sidh.NewPublicKey(sidh.Fp434, sidh.KeyVariantSike)

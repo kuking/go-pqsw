@@ -61,12 +61,14 @@ func (k *Key) GetKeyType() cryptoutil.KeyType {
 	return cryptoutil.KeyTypeUnknown
 }
 
-func (k *Key) GetSidhPrivateKey() *sidh.PrivateKey {
-	return cryptoutil.SidhPrivateKeyFromString(k.Pvt)
+func (k *Key) GetPrivateKey() (pvt []byte) {
+	pvt, _ = base64.StdEncoding.DecodeString(k.Pvt)
+	return
 }
 
-func (k *Key) GetSidhPublicKey() *sidh.PublicKey {
-	return cryptoutil.SidhPublicKeyFromString(k.Pub)
+func (k *Key) GetPublicKey() (pub []byte) {
+	pub, _ = base64.StdEncoding.DecodeString(k.Pub)
+	return
 }
 
 func (k *Key) GetKemSike() (*sidh.KEM, error) {
@@ -133,19 +135,20 @@ func (p *Potp) ReadOTP(size int, offset uint64) ([]byte, error) {
 
 func (c *Config) CreateAndAddKey(keyType cryptoutil.KeyType) (*Key, error) {
 
-	var pvt *sidh.PrivateKey
-	var pub *sidh.PublicKey
-	pvt, pub, err := cryptoutil.SidhNewPair(keyType)
+	var pvt []byte
+	var pub []byte
+
+	pvt, pub, err := cryptoutil.GenKey(keyType)
 	if err != nil {
 		return nil, err
 	}
 
-	keyId := cryptoutil.SidhKeyId(pub)
+	keyId := cryptoutil.KeyId(pub)
 	key := Key{
 		Type: cryptoutil.KeyTypeAsString[keyType],
 		Uuid: keyId,
-		Pvt:  cryptoutil.SidhPrivateKeyAsString(pvt),
-		Pub:  cryptoutil.SidhPublicKeyAsString(pub),
+		Pvt:  cryptoutil.PrivateKeyAsString(pvt),
+		Pub:  cryptoutil.PublicKeyAsString(pub),
 	}
 	c.Keys = append(c.Keys, key)
 	return &key, nil

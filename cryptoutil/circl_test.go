@@ -1,7 +1,6 @@
 package cryptoutil
 
 import (
-	"bytes"
 	"crypto/rand"
 	"github.com/cloudflare/circl/dh/sidh"
 	"testing"
@@ -48,61 +47,26 @@ func TestSidhNewPair(t *testing.T) {
 
 }
 
-func TestStringifyBytifyKeys(t *testing.T) {
-	for _, kt := range []KeyType{KeyTypeSidhFp434, KeyTypeSidhFp503, KeyTypeSidhFp751} {
-		pvt, pub, err := SidhNewPair(kt)
-		if err != nil {
-			t.Fatal("creating keys should work")
-		}
-		pvtSt := SidhPrivateKeyAsString(pvt)
-		pubSt := SidhPublicKeyAsString(pub)
-		pvtRoundTrip := SidhPrivateKeyFromString(pvtSt)
-		pubRoundTrip := SidhPublicKeyFromString(pubSt)
-		if !bytes.Equal(pvt.S, pvtRoundTrip.S) ||
-			!bytes.Equal(pvt.Scalar, pvtRoundTrip.Scalar) ||
-			!bytes.Equal(SidhBytesFromPrivateKey(pvt), SidhBytesFromPrivateKey(pvtRoundTrip)) ||
-			!bytes.Equal(SidhBytesFromPublicKey(pub), SidhBytesFromPublicKey(pubRoundTrip)) {
-			t.Fatal("round trip key after converting to string does not seems to be the same")
-		}
-	}
-}
-
-func TestStringifyBorderCases(t *testing.T) {
-	if SidhPrivateKeyFromString("") != nil ||
-		SidhPublicKeyFromString("") != nil ||
-		SidhPrivateKeyFromString("!") != nil ||
-		SidhPublicKeyFromString("!") != nil ||
-		SidhPrivateKeyFromString("aGkK") != nil ||
-		SidhPublicKeyFromString("aGkK") != nil {
-		t.Fatal("invalid string representation of key should fail")
-	}
-}
-
-func TestKeyId(t *testing.T) {
-	_, pub, _ := SidhNewPair(KeyTypeSidhFp434)
-	if len(SidhKeyId(pub)) != 44 {
-		t.Fatal("this should look like an base64 of length 44")
-	}
-	_, pub, _ = SidhNewPair(KeyTypeSidhFp503)
-	if len(SidhKeyId(pub)) != 44 {
-		t.Fatal("this should look like an base64 of length 44")
-	}
-	_, pub, _ = SidhNewPair(KeyTypeSidhFp751)
-	if len(SidhKeyId(pub)) != 44 {
-		t.Fatal("this should look like an base64 of length 44")
-	}
-}
-
 func BenchmarkSidhNewPair_Fp434(b *testing.B) {
-	SidhNewPair(KeyTypeSidhFp434)
+	_, _, err := GenKey(KeyTypeSidhFp434)
+	if err != nil {
+		b.Error(b)
+	}
 }
 
 func BenchmarkSidhNewPair_Fp503(b *testing.B) {
-	SidhNewPair(KeyTypeSidhFp503)
+	_, _, err := GenKey(KeyTypeSidhFp503)
+	if err != nil {
+		b.Error(b)
+	}
+
 }
 
 func BenchmarkSidhNewPair_Fp751(b *testing.B) {
-	SidhNewPair(KeyTypeSidhFp751)
+	_, _, err := GenKey(KeyTypeSidhFp751)
+	if err != nil {
+		b.Error(b)
+	}
 }
 
 func commonBenchKEM(kem *sidh.KEM, pvt *sidh.PrivateKey, pub *sidh.PublicKey, b *testing.B) {
