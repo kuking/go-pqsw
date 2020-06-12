@@ -12,27 +12,6 @@ func TestGenKeyInvalid(t *testing.T) {
 	}
 }
 
-func TestGenKeyFrodoAllVariants(t *testing.T) {
-	for keyType, name := range KeyTypeAsString {
-		if name[0:5] == "FRODO" {
-			kem, err := FrodoKEMFromKeyType(keyType)
-			if err != nil {
-				t.Error(err)
-			}
-			pvt, pub, err := GenKey(keyType)
-			if err != nil {
-				t.Error(err)
-			}
-			if len(pub) != kem.PublicKeyLen() {
-				t.Error("It did not return the right public key length")
-			}
-			if len(pvt) != kem.SecretKeyLen() {
-				t.Error("It did not return the right private key length")
-			}
-		}
-	}
-}
-
 func TestGenKeySikeVariants(t *testing.T) {
 	pvt, pub, err := GenKey(KeyTypeSidhFp434)
 	if err != nil {
@@ -66,7 +45,28 @@ func TestGenKeySikeVariants(t *testing.T) {
 	if len(pub) != 564 {
 		t.Error("It did not return the right public key length")
 	}
+}
 
+func TestGenKeyFrodoVariants(t *testing.T) {
+	for kt, name := range KeyTypeAsString {
+		if name[0:5] == "FRODO" {
+			pvt, pub, err := GenKey(kt)
+			if err != nil {
+				t.Error(err)
+			}
+			kem, err := FrodoKEMFromKeyType(kt)
+			if err != nil {
+				t.Error(err)
+			}
+
+			if len(pvt) != kem.SecretKeyLen() {
+				t.Error("Private Key size generated not right")
+			}
+			if len(pub) != kem.PublicKeyLen() {
+				t.Error("Public Key size generated not right")
+			}
+		}
+	}
 }
 
 func TestKeyId(t *testing.T) {

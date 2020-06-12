@@ -1,44 +1,16 @@
 package cryptoutil
 
 import (
-	"crypto/rand"
-	"encoding/base64"
 	"github.com/cloudflare/circl/dh/sidh"
-	"github.com/pkg/errors"
 )
 
-func SidhNewPair(keyType KeyType) (pvt *sidh.PrivateKey, pub *sidh.PublicKey, err error) {
-	if keyType == KeyTypeSidhFp434 {
-		pvt = sidh.NewPrivateKey(sidh.Fp434, sidh.KeyVariantSike)
-		pub = sidh.NewPublicKey(sidh.Fp434, sidh.KeyVariantSike)
-	} else if keyType == KeyTypeSidhFp503 {
-		pvt = sidh.NewPrivateKey(sidh.Fp503, sidh.KeyVariantSike)
-		pub = sidh.NewPublicKey(sidh.Fp503, sidh.KeyVariantSike)
-	} else if keyType == KeyTypeSidhFp751 {
-		pvt = sidh.NewPrivateKey(sidh.Fp751, sidh.KeyVariantSike)
-		pub = sidh.NewPublicKey(sidh.Fp751, sidh.KeyVariantSike)
-	} else {
-		return nil, nil, errors.Errorf("I do not know how to create a key type %d.", keyType)
-	}
-	err = pvt.Generate(rand.Reader)
-	if err != nil {
-		return nil, nil, err
-	}
-	pvt.GeneratePublicKey(pub)
-	return pvt, pub, err
-}
-
-func KeyId(pub []byte) string {
-	return base64.StdEncoding.EncodeToString(QuickSha256(pub))
-}
-
-func SidhBytesFromPrivateKey(pvt *sidh.PrivateKey) []byte {
+func SikeBytesFromPrivateKey(pvt *sidh.PrivateKey) []byte {
 	b := make([]byte, pvt.Size())
 	pvt.Export(b)
 	return b
 }
 
-func SidhBytesFromPublicKey(pvt *sidh.PublicKey) []byte {
+func SikeBytesFromPublicKey(pvt *sidh.PublicKey) []byte {
 	b := make([]byte, pvt.Size())
 	pvt.Export(b)
 	return b

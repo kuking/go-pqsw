@@ -6,47 +6,6 @@ import (
 	"testing"
 )
 
-func TestSidhNewPair(t *testing.T) {
-	pvt, pub, err := SidhNewPair(KeyTypeInvalid)
-	if pvt != nil || pub != nil || err == nil {
-		t.Fatal("invalid KeyType should err")
-	}
-
-	pvt, pub, err = SidhNewPair(KeyTypeSidhFp434)
-	if pvt == nil || pub == nil || err != nil {
-		t.Fatal("could not create key")
-	}
-	if pvt.Size() != 44 {
-		t.Fatal("Fp434 private sidh key should have size 44")
-	}
-	if pub.Size() != 330 {
-		t.Fatal("Fp434 public sidh key should have size 330")
-	}
-
-	pvt, pub, err = SidhNewPair(KeyTypeSidhFp503)
-	if pvt == nil || pub == nil || err != nil {
-		t.Fatal("could not create key")
-	}
-	if pvt.Size() != 56 {
-		t.Fatal("Fp503 private sidh key should have size 56")
-	}
-	if pub.Size() != 378 {
-		t.Fatal("Fp503 public sidh key should have size 378")
-	}
-
-	pvt, pub, err = SidhNewPair(KeyTypeSidhFp751)
-	if pvt == nil || pub == nil || err != nil {
-		t.Fatal("could not create key")
-	}
-	if pvt.Size() != 80 {
-		t.Fatal("Fp751 private sidh key should have size 80")
-	}
-	if pub.Size() != 564 {
-		t.Fatal("Fp751 public sidh key should have size 564")
-	}
-
-}
-
 func BenchmarkSidhNewPair_Fp434(b *testing.B) {
 	_, _, err := GenKey(KeyTypeSidhFp434)
 	if err != nil {
@@ -79,19 +38,19 @@ func commonBenchKEM(kem *sidh.KEM, pvt *sidh.PrivateKey, pub *sidh.PublicKey, b 
 }
 
 func BenchmarkKEM_Fp434(b *testing.B) {
-	pvt, pub, _ := SidhNewPair(KeyTypeSidhFp434)
+	pvt, pub, _ := GenKey(KeyTypeSidhFp434)
 	kem := sidh.NewSike434(rand.Reader)
-	commonBenchKEM(kem, pvt, pub, b)
+	commonBenchKEM(kem, SikePrivateKeyFromBytes(pvt), SikePublicKeyFromBytes(pub), b)
 }
 
 func BenchmarkKEM_Fp503(b *testing.B) {
-	pvt, pub, _ := SidhNewPair(KeyTypeSidhFp503)
+	pvt, pub, _ := GenKey(KeyTypeSidhFp503)
 	kem := sidh.NewSike503(rand.Reader)
-	commonBenchKEM(kem, pvt, pub, b)
+	commonBenchKEM(kem, SikePrivateKeyFromBytes(pvt), SikePublicKeyFromBytes(pub), b)
 }
 
 func BenchmarkKEM_Fp751(b *testing.B) {
-	pvt, pub, _ := SidhNewPair(KeyTypeSidhFp751)
+	pvt, pub, _ := GenKey(KeyTypeSidhFp751)
 	kem := sidh.NewSike751(rand.Reader)
-	commonBenchKEM(kem, pvt, pub, b)
+	commonBenchKEM(kem, SikePrivateKeyFromBytes(pvt), SikePublicKeyFromBytes(pub), b)
 }

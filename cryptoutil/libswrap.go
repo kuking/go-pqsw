@@ -8,23 +8,8 @@ import (
 	"github.com/pkg/errors"
 )
 
-func FrodoKEMFromKeyType(keyType KeyType) (kem frodo.FrodoKEM, err error) {
-	if keyType == KeyTypeFrodo640AES {
-		kem = frodo.Frodo640AES()
-	} else if keyType == KeyTypeFrodo640SHAKE {
-		kem = frodo.Frodo640SHAKE()
-	} else if keyType == KeyTypeFrodo976AES {
-		kem = frodo.Frodo976AES()
-	} else if keyType == KeyTypeFrodo976SHAKE {
-		kem = frodo.Frodo976SHAKE()
-	} else if keyType == KeyTypeFrodo1344AES {
-		kem = frodo.Frodo1344AES()
-	} else if keyType == KeyTypeFrodo1344SHAKE {
-		kem = frodo.Frodo1344SHAKE()
-	} else {
-		err = errors.Errorf("I don't know how to build a FrodoKEM using %v keyType", keyType)
-	}
-	return
+func KeyId(pub []byte) string {
+	return base64.StdEncoding.EncodeToString(QuickSha256(pub))
 }
 
 func GenKey(keyType KeyType) (pvt []byte, pub []byte, err error) {
@@ -59,8 +44,8 @@ func GenKey(keyType KeyType) (pvt []byte, pub []byte, err error) {
 			return
 		}
 		sikePvt.GeneratePublicKey(sikePub)
-		pub = SidhBytesFromPublicKey(sikePub)
-		pvt = SidhBytesFromPrivateKey(sikePvt)
+		pub = SikeBytesFromPublicKey(sikePub)
+		pvt = SikeBytesFromPrivateKey(sikePvt)
 	} else {
 		err = errors.New("This code is inconsistent, maybe needs more work.")
 	}
