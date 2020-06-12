@@ -12,7 +12,7 @@ import (
 // most of common asserts, givens, etc. in server_test.go
 func clientSetup() {
 	setup()
-	givenServerAndClientKeys()
+	givenServerAndClientKeys(cryptoutil.KeyTypeSidhFp503) //XXX FIXME test with multiple keys types
 	givenPotpInConfig()
 	go ClientHandshake(cPipe, cfg)
 }
