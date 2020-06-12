@@ -54,7 +54,7 @@ func TestGenKeyFrodoVariants(t *testing.T) {
 			if err != nil {
 				t.Error(err)
 			}
-			kem, err := FrodoKEMFromKeyType(kt)
+			kem, err := FrodoGetKem(kt)
 			if err != nil {
 				t.Error(err)
 			}

@@ -28,7 +28,7 @@ func GenKey(keyType KeyType) (pvt []byte, pub []byte, err error) {
 		sikePub = sidh.NewPublicKey(sidh.Fp751, sidh.KeyVariantSike)
 	} else {
 		var kem frodo.FrodoKEM
-		kem, err = FrodoKEMFromKeyType(keyType)
+		kem, err = FrodoGetKem(keyType)
 		if err != nil {
 			err = errors.Errorf("I do not know how to create a key type %d.", keyType)
 			return
@@ -54,34 +54,27 @@ func GenKey(keyType KeyType) (pvt []byte, pub []byte, err error) {
 }
 
 func Encapsulate(pub []byte, keyType KeyType) (ct []byte, ss []byte, err error) {
-	sikePub := SikePublicKeyFromBytes(pub)
-	kem, err := SikeGetKem(keyType)
-	if err != nil {
-		return nil, nil, err
+	keyName := KeyTypeAsString[keyType]
+	if keyName[:4] == "SIKE" {
+		return SikeEncapsulate(pub, keyType)
+	} else if keyName[:5] == "FRODO" {
+		return FrodoEncapsulate(pub, keyType)
+	} else {
+		err = errors.Errorf("Encapsulate does not know how to handle key type: %v", keyName)
+		return
 	}
-	ct = make([]byte, kem.CiphertextSize())
-	ss = make([]byte, kem.SharedSecretSize())
-	err = kem.Encapsulate(ct, ss, sikePub)
-	if err != nil {
-		return nil, nil, err
-	}
-	return
 }
 
 func Dencapsulate(pub []byte, pvt []byte, ct []byte, keyType KeyType) (ss []byte, err error) {
-	sikePub := SikePublicKeyFromBytes(pub)
-	sikePvt := SikePrivateKeyFromBytes(pvt)
-	kem, err := SikeGetKem(keyType)
-	if err != nil {
-		return nil, err
+	keyName := KeyTypeAsString[keyType]
+	if keyName[:4] == "SIKE" {
+		return SikeDencapsulate(pub, pvt, ct, keyType)
+	} else if keyName[:5] == "FRODO" {
+		return FrodoDencapsulate(pvt, ct, keyType)
+	} else {
+		err = errors.Errorf("Encapsulate does not know how to handle key type: %v", keyName)
+		return
 	}
-	ss = make([]byte, kem.SharedSecretSize())
-	err = kem.Decapsulate(ss, sikePvt, sikePub, ct)
-	if err != nil {
-		return nil, err
-
-	}
-	return
 }
 
 func PublicKeyAsString(pub []byte) string {

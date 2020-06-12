@@ -7,7 +7,7 @@ import (
 func TestGenKeyFrodoAllVariants(t *testing.T) {
 	for keyType, name := range KeyTypeAsString {
 		if name[0:5] == "FRODO" {
-			kem, err := FrodoKEMFromKeyType(keyType)
+			kem, err := FrodoGetKem(keyType)
 			if err != nil {
 				t.Error(err)
 			}

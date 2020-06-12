@@ -5,7 +5,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-func FrodoKEMFromKeyType(keyType KeyType) (kem frodo.FrodoKEM, err error) {
+func FrodoGetKem(keyType KeyType) (kem frodo.FrodoKEM, err error) {
 	if keyType == KeyTypeFrodo640AES {
 		kem = frodo.Frodo640AES()
 	} else if keyType == KeyTypeFrodo640SHAKE {
@@ -22,4 +22,21 @@ func FrodoKEMFromKeyType(keyType KeyType) (kem frodo.FrodoKEM, err error) {
 		err = errors.Errorf("I don't know how to build a FrodoKEM using %v keyType", keyType)
 	}
 	return
+}
+
+func FrodoEncapsulate(pub []byte, keyType KeyType) (ct []byte, ss []byte, err error) {
+	kem, err := FrodoGetKem(keyType)
+	if err != nil {
+		return
+	}
+	ct, ss, err = kem.Encapsulate(pub)
+	return
+}
+
+func FrodoDencapsulate(pub []byte, ct []byte, keyType KeyType) (ss []byte, err error) {
+	kem, err := FrodoGetKem(keyType)
+	if err != nil {
+		return
+	}
+	return kem.Dencapsulate(pub, ct)
 }

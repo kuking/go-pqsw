@@ -64,3 +64,34 @@ func SikeGetKem(keyType KeyType) (*sidh.KEM, error) {
 		return nil, errors.New("can not create kem for key")
 	}
 }
+
+func SikeEncapsulate(pub []byte, keyType KeyType) (ct []byte, ss []byte, err error) {
+	sikePub := SikePublicKeyFromBytes(pub)
+	kem, err := SikeGetKem(keyType)
+	if err != nil {
+		return nil, nil, err
+	}
+	ct = make([]byte, kem.CiphertextSize())
+	ss = make([]byte, kem.SharedSecretSize())
+	err = kem.Encapsulate(ct, ss, sikePub)
+	if err != nil {
+		return nil, nil, err
+	}
+	return
+}
+
+func SikeDencapsulate(pub []byte, pvt []byte, ct []byte, keyType KeyType) (ss []byte, err error) {
+	sikePub := SikePublicKeyFromBytes(pub)
+	sikePvt := SikePrivateKeyFromBytes(pvt)
+	kem, err := SikeGetKem(keyType)
+	if err != nil {
+		return nil, err
+	}
+	ss = make([]byte, kem.SharedSecretSize())
+	err = kem.Decapsulate(ss, sikePvt, sikePub, ct)
+	if err != nil {
+		return nil, err
+
+	}
+	return
+}

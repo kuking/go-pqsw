@@ -472,8 +472,7 @@ func TestServer_HappyPath(t *testing.T) {
 	assertConnectionStillOpen(t)
 }
 
-// SKIP
-func testServer_HappyPath_forEvery_KeyType(t *testing.T) {
+func TestServer_HappyPath_forEvery_KeyType(t *testing.T) {
 	for keyType, name := range cu.KeyTypeAsString {
 		t.Run(fmt.Sprintf("Happy Path using %v", name), func(t *testing.T) {
 			serverSetup()
