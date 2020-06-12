@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -333,8 +334,19 @@ The commands are:
 
 func showKeyCreateHelp() {
 	fmt.Println("Usage: pqswcfg key create <type> <config file>")
-	fmt.Print("\nSupported key types: ")
+	fmt.Println("\nSupported key types: ")
+	values := make([]string, 0, len(cryptoutil.KeyTypeAsString))
 	for _, v := range cryptoutil.KeyTypeAsString {
+		values = append(values, v)
+	}
+	sort.Strings(values)
+	first := values[0][0]
+	fmt.Print("- ")
+	for _, v := range values {
+		if v[0] != first {
+			first = v[0]
+			fmt.Print("\n- ")
+		}
 		fmt.Print(v, " ")
 	}
 	fmt.Println()

@@ -18,6 +18,32 @@ func SikeBytesFromPublicKey(pvt *sidh.PublicKey) []byte {
 	return b
 }
 
+func sikeGenKey(keyType KeyType) (pvt []byte, pub []byte, err error) {
+	var sikePvt *sidh.PrivateKey
+	var sikePub *sidh.PublicKey
+	if keyType == KeyTypeSidhFp434 {
+		sikePvt = sidh.NewPrivateKey(sidh.Fp434, sidh.KeyVariantSike)
+		sikePub = sidh.NewPublicKey(sidh.Fp434, sidh.KeyVariantSike)
+	} else if keyType == KeyTypeSidhFp503 {
+		sikePvt = sidh.NewPrivateKey(sidh.Fp503, sidh.KeyVariantSike)
+		sikePub = sidh.NewPublicKey(sidh.Fp503, sidh.KeyVariantSike)
+	} else if keyType == KeyTypeSidhFp751 {
+		sikePvt = sidh.NewPrivateKey(sidh.Fp751, sidh.KeyVariantSike)
+		sikePub = sidh.NewPublicKey(sidh.Fp751, sidh.KeyVariantSike)
+	} else {
+		err = errors.Errorf("I don't know how to handle Sike key type: %v", KeyTypeAsString[keyType])
+		return
+	}
+	err = sikePvt.Generate(rand.Reader)
+	if err != nil {
+		return
+	}
+	sikePvt.GeneratePublicKey(sikePub)
+	pub = SikeBytesFromPublicKey(sikePub)
+	pvt = SikeBytesFromPrivateKey(sikePvt)
+	return
+}
+
 func SikePrivateKeyFromBytes(b []byte) *sidh.PrivateKey {
 	var pvt *sidh.PrivateKey
 	if len(b) == 44 {
@@ -65,7 +91,7 @@ func SikeGetKem(keyType KeyType) (*sidh.KEM, error) {
 	}
 }
 
-func SikeEncapsulate(pub []byte, keyType KeyType) (ct []byte, ss []byte, err error) {
+func sikeEncapsulate(pub []byte, keyType KeyType) (ct []byte, ss []byte, err error) {
 	sikePub := SikePublicKeyFromBytes(pub)
 	kem, err := SikeGetKem(keyType)
 	if err != nil {
@@ -80,7 +106,7 @@ func SikeEncapsulate(pub []byte, keyType KeyType) (ct []byte, ss []byte, err err
 	return
 }
 
-func SikeDencapsulate(pub []byte, pvt []byte, ct []byte, keyType KeyType) (ss []byte, err error) {
+func sikeDencapsulate(pub []byte, pvt []byte, ct []byte, keyType KeyType) (ss []byte, err error) {
 	sikePub := SikePublicKeyFromBytes(pub)
 	sikePvt := SikePrivateKeyFromBytes(pvt)
 	kem, err := SikeGetKem(keyType)

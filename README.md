@@ -19,7 +19,7 @@ a configuration file holding keys, potps, etc. please find its details in the [p
 Post Quantum Ciphers supported so far:
 - FrodoKEM (640, 976, 1344 in both AES and Shake variants).
 - Sike (Fp434, Fp503 & Fp751)
-- Kyber (soon)
+- Kyber (512, 768, 1024)
 
 
 ##  Author
