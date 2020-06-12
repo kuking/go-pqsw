@@ -220,11 +220,9 @@ func sendSharedSecret(conn net.Conn, receiver *config.Key, potp *config.Potp, ke
 		return res, Disconnect(err, msg.DisconnectCauseNone)
 	}
 
-	receivedSikePub := cryptoutil.SikePublicKeyFromBytes(receiver.GetPublicKey())
 	for secretNo := 0; secretNo < secretsCount; secretNo++ {
-		res.Shared[secretNo] = make([]byte, kem.SharedSecretSize())
-		ciphertext := make([]byte, kem.CiphertextSize())
-		err = kem.Encapsulate(ciphertext, res.Shared[secretNo], receivedSikePub)
+		var ciphertext []byte
+		ciphertext, res.Shared[secretNo], err = cryptoutil.Encapsulate(receiver.GetPublicKey(), receiver.GetKeyType())
 		if err != nil {
 			return res, Disconnect(err, msg.DisconnectCauseSeverMisconfiguration)
 		}
@@ -282,16 +280,14 @@ func readSharedSecret(conn net.Conn, receiver *config.Key, cfg *config.Config, k
 		Shared: make([][]byte, bundleDesc.SecretsCount),
 	}
 
-	receivedSikePub := cryptoutil.SikePublicKeyFromBytes(receiver.GetPublicKey())
-	receivedSikePvt := cryptoutil.SikePrivateKeyFromBytes(receiver.GetPrivateKey())
 	for count := 0; count < int(bundleDesc.SecretsCount); count++ {
 		cipherText := make([]byte, bundleDesc.SecretSize)
-		res.Shared[count] = make([]byte, kem.SharedSecretSize())
 		err = binary.Read(conn, binary.LittleEndian, cipherText)
 		if err != nil {
 			return res, Disconnect(err, msg.DisconnectCauseNone)
 		}
-		err = kem.Decapsulate(res.Shared[count], receivedSikePvt, receivedSikePub, cipherText)
+		res.Shared[count], err =
+			cryptoutil.Dencapsulate(receiver.GetPublicKey(), receiver.GetPrivateKey(), cipherText, receiver.GetKeyType())
 		//fmt.Printf("recv: secret[%v] %v (cipher: %v)\n", count, cryptoutil.EncB64(res.Shared[count]), cryptoutil.EncB64(cipherText))
 		if err != nil {
 			return res, Disconnect(err, msg.DisconnectCauseNotEnoughSecurityRequested)

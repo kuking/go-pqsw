@@ -375,11 +375,10 @@ func TestServerSharedSecretRequest_ClientAndServerExchangeSharedSecret(t *testin
 	if kem.CiphertextSize() != len(ciphertext) {
 		t.Error("secret size sent by server is wrong")
 	}
-	clientSikePvt := cryptoutil.SikePrivateKeyFromBytes(clientKey.GetPrivateKey())
-	serverSikePub := cryptoutil.SikePublicKeyFromBytes(clientKey.GetPublicKey())
 	for i := 0; i < int(sharedSecretBundleDescResponse.SecretsCount); i++ {
 		cRecv(t, ciphertext)
-		err := kem.Decapsulate(ciphertext, clientSikePvt, serverSikePub, ciphertext)
+		_, err := cryptoutil.Dencapsulate(
+			clientKey.GetPublicKey(), clientKey.GetPrivateKey(), ciphertext, clientKey.GetKeyType())
 		if err != nil {
 			t.Error("kem failed to decapsulate", err)
 		}
@@ -553,11 +552,11 @@ func givenSharedSecretSend(t *testing.T, send func(t *testing.T, msg interface{}
 		Otp:    potpBytes,
 		Shared: make([][]byte, clientSecretsCount),
 	}
-	receiverSikePub := cryptoutil.SikePublicKeyFromBytes(receiverKey.GetPublicKey())
 	for secretNo := 0; secretNo < clientSecretsCount; secretNo++ {
-		sharedSecret.Shared[secretNo] = make([]byte, kem.SharedSecretSize())
-		ciphertext := make([]byte, kem.CiphertextSize())
-		err := kem.Encapsulate(ciphertext, sharedSecret.Shared[secretNo], receiverSikePub)
+		var ciphertext []byte
+		var err error
+		ciphertext, sharedSecret.Shared[secretNo], err =
+			cryptoutil.Encapsulate(receiverKey.GetPublicKey(), receiverKey.GetKeyType())
 		if err != nil {
 			panic(err)
 		}

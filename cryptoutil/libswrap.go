@@ -53,6 +53,37 @@ func GenKey(keyType KeyType) (pvt []byte, pub []byte, err error) {
 	return
 }
 
+func Encapsulate(pub []byte, keyType KeyType) (ct []byte, ss []byte, err error) {
+	sikePub := SikePublicKeyFromBytes(pub)
+	kem, err := SikeGetKem(keyType)
+	if err != nil {
+		return nil, nil, err
+	}
+	ct = make([]byte, kem.CiphertextSize())
+	ss = make([]byte, kem.SharedSecretSize())
+	err = kem.Encapsulate(ct, ss, sikePub)
+	if err != nil {
+		return nil, nil, err
+	}
+	return
+}
+
+func Dencapsulate(pub []byte, pvt []byte, ct []byte, keyType KeyType) (ss []byte, err error) {
+	sikePub := SikePublicKeyFromBytes(pub)
+	sikePvt := SikePrivateKeyFromBytes(pvt)
+	kem, err := SikeGetKem(keyType)
+	if err != nil {
+		return nil, err
+	}
+	ss = make([]byte, kem.SharedSecretSize())
+	err = kem.Decapsulate(ss, sikePvt, sikePub, ct)
+	if err != nil {
+		return nil, err
+
+	}
+	return
+}
+
 func PublicKeyAsString(pub []byte) string {
 	return base64.StdEncoding.EncodeToString(pub)
 }

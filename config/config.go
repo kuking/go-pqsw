@@ -71,6 +71,7 @@ func (k *Key) GetPublicKey() (pub []byte) {
 	return
 }
 
+// deprecated
 func (k *Key) GetKemSike() (*sidh.KEM, error) {
 	switch k.GetKeyType() {
 	case cryptoutil.KeyTypeSidhFp434:

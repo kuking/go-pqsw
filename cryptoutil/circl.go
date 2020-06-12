@@ -1,7 +1,9 @@
 package cryptoutil
 
 import (
+	"crypto/rand"
 	"github.com/cloudflare/circl/dh/sidh"
+	"github.com/pkg/errors"
 )
 
 func SikeBytesFromPrivateKey(pvt *sidh.PrivateKey) []byte {
@@ -48,4 +50,17 @@ func SikePublicKeyFromBytes(b []byte) *sidh.PublicKey {
 		return nil
 	}
 	return pub
+}
+
+func SikeGetKem(keyType KeyType) (*sidh.KEM, error) {
+	switch keyType {
+	case KeyTypeSidhFp434:
+		return sidh.NewSike434(rand.Reader), nil
+	case KeyTypeSidhFp503:
+		return sidh.NewSike503(rand.Reader), nil
+	case KeyTypeSidhFp751:
+		return sidh.NewSike751(rand.Reader), nil
+	default:
+		return nil, errors.New("can not create kem for key")
+	}
 }
