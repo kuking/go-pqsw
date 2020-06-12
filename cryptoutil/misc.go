@@ -34,6 +34,25 @@ var KeyTypeAsString = map[KeyType]string{
 	KeyTypeFrodo1344SHAKE: "FRODO_1344_SHAKE",
 }
 
+type KemSizes struct {
+	Private      int
+	Public       int
+	CipherText   int
+	SharedSecret int
+}
+
+var CipherTextSizeByKeyType = map[KeyType]KemSizes{
+	KeyTypeSidhFp434:      {374, 330, 346, 16},
+	KeyTypeSidhFp503:      {434, 378, 402, 24},
+	KeyTypeSidhFp751:      {644, 564, 596, 32},
+	KeyTypeFrodo640AES:    {19888, 9616, 9720, 16},
+	KeyTypeFrodo640SHAKE:  {19888, 9616, 9720, 16},
+	KeyTypeFrodo976AES:    {31296, 15632, 15744, 24},
+	KeyTypeFrodo976SHAKE:  {31296, 15632, 15744, 24},
+	KeyTypeFrodo1344AES:   {43088, 21520, 21632, 32},
+	KeyTypeFrodo1344SHAKE: {43088, 21520, 21632, 32},
+}
+
 func QuickSha256(b []byte) []byte {
 	h := sha256.New()
 	h.Write(b)

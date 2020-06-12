@@ -215,7 +215,7 @@ func TestClient_HappyPath(t *testing.T) {
 func givenClientHello(t *testing.T) (clientKey *config.Key, keySize int) {
 	sRecv(t, &clientHello)
 	clientKey, _ = cfg.GetKeyByID(clientHello.KeyIdAsString())
-	keySize = calculateKeySize(&clientHello)
+	keySize = calculateSymmetricKeySize(&clientHello)
 	return
 }
 

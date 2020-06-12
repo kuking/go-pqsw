@@ -4,7 +4,6 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
-	"github.com/cloudflare/circl/dh/sidh"
 	"github.com/kuking/go-pqsw/cryptoutil"
 	"github.com/pkg/errors"
 	"io/ioutil"
@@ -69,20 +68,6 @@ func (k *Key) GetPrivateKey() (pvt []byte) {
 func (k *Key) GetPublicKey() (pub []byte) {
 	pub, _ = base64.StdEncoding.DecodeString(k.Pub)
 	return
-}
-
-// deprecated
-func (k *Key) GetKemSike() (*sidh.KEM, error) {
-	switch k.GetKeyType() {
-	case cryptoutil.KeyTypeSidhFp434:
-		return sidh.NewSike434(rand.Reader), nil
-	case cryptoutil.KeyTypeSidhFp503:
-		return sidh.NewSike503(rand.Reader), nil
-	case cryptoutil.KeyTypeSidhFp751:
-		return sidh.NewSike751(rand.Reader), nil
-	default:
-		return nil, errors.New("can not create kem for key")
-	}
 }
 
 func (p *Potp) GetPotpIdAs32Byte() [32]byte {

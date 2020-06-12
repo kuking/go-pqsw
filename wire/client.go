@@ -23,12 +23,8 @@ func ClientHandshake(conn net.Conn, cfg *config.Config) (wire *SecureWire, err e
 	if terminateHandshakeOnError(conn, err, "retrieving client key from configuration") {
 		return
 	}
-	keySize, err := sendHello(conn, clientKey)
+	symmetricKeySize, err := sendHello(conn, clientKey)
 	if terminateHandshakeOnError(conn, err, "sending client hello") {
-		return
-	}
-	kem, err := clientKey.GetKemSike()
-	if terminateHandshakeOnError(conn, err, "obtaining kem to negotiate shared secrets") {
 		return
 	}
 	shareSecretReq, err := readSharedSecretRequest(conn, cfg)
@@ -43,17 +39,17 @@ func ClientHandshake(conn net.Conn, cfg *config.Config) (wire *SecureWire, err e
 	if terminateHandshakeOnError(conn, err, "could not retrieve server potp from config") {
 		return
 	}
-	clientShare, serr := sendSharedSecret(conn, serverKey, potp, keySize, kem)
+	clientShare, serr := sendSharedSecret(conn, serverKey, potp, symmetricKeySize)
 	if serr != nil && terminateHandshakeOnError(conn, serr.err, "sending shared secret to server") {
 		err = serr.err
 		return
 	}
-	serverShare, serr := readSharedSecret(conn, clientKey, cfg, keySize, kem)
+	serverShare, serr := readSharedSecret(conn, clientKey, cfg, symmetricKeySize)
 	if serr != nil && terminateHandshakeOnError(conn, serr.err, "reading shared secret from server") {
 		err = serr.err
 		return
 	}
-	keysBytes := mixSharedSecretsForKey(serverShare, clientShare, keySize)
+	keysBytes := mixSharedSecretsForKey(serverShare, clientShare, symmetricKeySize)
 	fmt.Println("Client session key (debug, disable in prod):", cryptoutil.EncB64(keysBytes))
 	wire, err = NewSecureWireAES256CGM(keysBytes[0:32], keysBytes[32:32+12], conn)
 	if terminateHandshakeOnError(conn, err, "establishing secure_wire") {
@@ -98,18 +94,17 @@ func readSharedSecretRequest(conn net.Conn, cfg *config.Config) (req *msg.Shared
 	return req, nil
 }
 
-func sendHello(conn net.Conn, clientKey *config.Key) (keySize int, err error) {
+func sendHello(conn net.Conn, clientKey *config.Key) (symmetricKeySize int, err error) {
 	clientHello := msg.ClientHello{
 		Protocol: msg.ClientHelloProtocol,
 		WireType: msg.ClientHelloWireTypeSimpleAES256,
 		KeyId:    clientKey.GetKeyIdAs32Byte(),
 	}
-	keySize = (256 / 8) + (96 / 8)
+	symmetricKeySize = (256 / 8) + (96 / 8)
 	if clientHello.WireType == msg.ClientHelloWireTypeTripleAES256 {
-		keySize = keySize * 3
+		symmetricKeySize = symmetricKeySize * 3
 	}
-	return keySize, binary.Write(conn, binary.LittleEndian, &clientHello)
-
+	return symmetricKeySize, binary.Write(conn, binary.LittleEndian, &clientHello)
 }
 
 func answerPuzzle(conn net.Conn) (err error) {

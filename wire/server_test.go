@@ -5,7 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
-	"github.com/cloudflare/circl/dh/sidh"
+	"fmt"
 	"github.com/google/logger"
 	"github.com/kuking/go-pqsw/config"
 	cu "github.com/kuking/go-pqsw/cryptoutil"
@@ -289,12 +289,12 @@ func TestServerSharedSecretRequest_InsufficientSharedSecrets(t *testing.T) {
 	givenClientHelloAnswered(t)
 
 	_, clientKey, clientPotp := givenSharedSecretRequestReceived(t)
-	_, kemsCount, kem := calculateKeySizeKemsCountAndKem(clientKey)
+	_, kemsCount := calculateKeySizeKemsCountAndKem(clientKey)
 	cSend(t, msg.SharedSecretBundleDescriptionResponse{
 		PotpIdUsed:   clientPotp.GetPotpIdAs32Byte(),
 		PotpOffset:   123,
 		SecretsCount: uint8(kemsCount + 1),
-		SecretSize:   uint16(kem.CiphertextSize()),
+		SecretSize:   uint16(cu.CipherTextSizeByKeyType[cu.KeyTypeSidhFp434].CipherText),
 	})
 
 	assertServerClosedConnectionWithCause(t, msg.DisconnectCauseNotEnoughSecurityRequested)
@@ -309,18 +309,18 @@ func TestServerSharedSecretRequest_EmptyCiphertexts(t *testing.T) {
 	givenPuzzleAnswered(t)
 	givenClientHelloAnswered(t)
 	_, clientKey, clientPotp := givenSharedSecretRequestReceived(t)
-	_, clientSecretsCount, kem := calculateKeySizeKemsCountAndKem(clientKey)
+	_, clientSecretsCount := calculateKeySizeKemsCountAndKem(clientKey)
 
 	sharedSecretBundleDescResponse = msg.SharedSecretBundleDescriptionResponse{
 		PotpIdUsed:   clientPotp.GetPotpIdAs32Byte(),
 		PotpOffset:   0,
 		SecretsCount: uint8(clientSecretsCount),
-		SecretSize:   uint16(kem.CiphertextSize()),
+		SecretSize:   uint16(cu.CipherTextSizeByKeyType[cu.KeyTypeSidhFp434].CipherText),
 	}
 	cSend(t, sharedSecretBundleDescResponse)
 
 	for secretNo := 0; secretNo < clientSecretsCount; secretNo++ {
-		ciphertext := make([]byte, kem.CiphertextSize())
+		ciphertext := make([]byte, cu.CipherTextSizeByKeyType[cu.KeyTypeSidhFp434].CipherText)
 		cSend(t, ciphertext)
 	}
 
@@ -336,13 +336,13 @@ func TestServerShareSecretRequest_ClientSendsInvalidSizeKem(t *testing.T) {
 	givenPuzzleAnswered(t)
 	givenClientHelloAnswered(t)
 	_, clientKey, clientPotp := givenSharedSecretRequestReceived(t)
-	_, clientSecretsCount, kem := calculateKeySizeKemsCountAndKem(clientKey)
+	_, clientSecretsCount := calculateKeySizeKemsCountAndKem(clientKey)
 
 	sharedSecretBundleDescResponse = msg.SharedSecretBundleDescriptionResponse{
 		PotpIdUsed:   clientPotp.GetPotpIdAs32Byte(),
 		PotpOffset:   0,
 		SecretsCount: uint8(clientSecretsCount),
-		SecretSize:   uint16(kem.CiphertextSize() + 25),
+		SecretSize:   uint16(cu.CipherTextSizeByKeyType[cu.KeyTypeSidhFp434].CipherText + 25),
 	}
 
 	cSend(t, sharedSecretBundleDescResponse)
@@ -388,8 +388,7 @@ func TestServerSharedSecretRequest_ClientAndServerExchangeSharedSecret(t *testin
 
 	cRecv(t, &sharedSecretBundleDescResponse) // implies the server is happy with the message
 	ciphertext := make([]byte, sharedSecretBundleDescResponse.SecretSize)
-	kem, _ := clientKey.GetKemSike()
-	if kem.CiphertextSize() != len(ciphertext) {
+	if cu.CipherTextSizeByKeyType[serverKey.GetKeyType()].CipherText != len(ciphertext) {
 		t.Error("secret size sent by server is wrong")
 	}
 	for i := 0; i < int(sharedSecretBundleDescResponse.SecretsCount); i++ {
@@ -473,32 +472,33 @@ func TestServer_HappyPath(t *testing.T) {
 	assertConnectionStillOpen(t)
 }
 
-// TODO: WIP: skipped for now, until everything is place
-func testServer_HappyPath_EveryKeyType(t *testing.T) {
-	for keyType := range cu.KeyTypeAsString {
-
-		serverSetup()
-		givenServerAndClientKeys(keyType)
-		givenPotpInConfig()
-		givenPuzzleAnswered(t)
-		givenClientHelloAnswered(t)
-		serverKey, clientKey, clientPotp := givenSharedSecretRequestReceived(t)
-		clientShare := givenSharedSecretSend(t, cSend, serverKey, clientPotp)
-		keySize := len(clientShare.Otp) // otp size will be the same as keySize, .. so far
-		serverShare := givenSharedSecretReceive(t, cRecv, clientKey, clientPotp, keySize)
-		sharedKey := mixSharedSecretsForKey(serverShare, clientShare, keySize)
-		sw, err := NewSecureWireAES256CGM(sharedKey[0:32], sharedKey[32:32+12], cPipe)
-		if err != nil {
-			t.Error(err)
-		}
-		gb := make([]byte, 4)
-		n, err := sw.Read(gb)
-		if n != 4 || err != nil || !bytes.Equal(gb[:], []byte{'G', 'O', 'O', 'D'}) {
-			t.Error("error reading final secure_wire good confirmation")
-		}
-		_, _ = sw.Write([]byte{'G', 'O', 'O', 'D'})
-		assertConnectionStillOpen(t)
-		cleanup()
+// SKIP
+func testServer_HappyPath_forEvery_KeyType(t *testing.T) {
+	for keyType, name := range cu.KeyTypeAsString {
+		t.Run(fmt.Sprintf("Happy Path using %v", name), func(t *testing.T) {
+			serverSetup()
+			givenServerAndClientKeys(keyType)
+			givenPotpInConfig()
+			givenPuzzleAnswered(t)
+			givenClientHelloAnswered(t)
+			serverKey, clientKey, clientPotp := givenSharedSecretRequestReceived(t)
+			clientShare := givenSharedSecretSend(t, cSend, serverKey, clientPotp)
+			keySize := len(clientShare.Otp) // otp size will be the same as keySize, .. so far
+			serverShare := givenSharedSecretReceive(t, cRecv, clientKey, clientPotp, keySize)
+			sharedKey := mixSharedSecretsForKey(serverShare, clientShare, keySize)
+			sw, err := NewSecureWireAES256CGM(sharedKey[0:32], sharedKey[32:32+12], cPipe)
+			if err != nil {
+				t.Error(err)
+			}
+			gb := make([]byte, 4)
+			n, err := sw.Read(gb)
+			if n != 4 || err != nil || !bytes.Equal(gb[:], []byte{'G', 'O', 'O', 'D'}) {
+				t.Error("error reading final secure_wire good confirmation")
+			}
+			_, _ = sw.Write([]byte{'G', 'O', 'O', 'D'})
+			assertConnectionStillOpen(t)
+			cleanup()
+		})
 	}
 }
 
@@ -585,14 +585,14 @@ func ServerSendsNoise(minimumAmount int) int {
 }
 
 func givenSharedSecretSend(t *testing.T, send func(t *testing.T, msg interface{}), receiverKey *config.Key, potp *config.Potp) *msg.SharedSecret {
-	keySize, clientSecretsCount, kem := calculateKeySizeKemsCountAndKem(receiverKey)
+	keySize, clientSecretsCount := calculateKeySizeKemsCountAndKem(receiverKey)
 	potpBytes, otpOffset := potp.PickOTP(keySize)
 
 	sharedSecretBundleDescResponse = msg.SharedSecretBundleDescriptionResponse{
 		PotpIdUsed:   potp.GetPotpIdAs32Byte(),
 		PotpOffset:   otpOffset,
 		SecretsCount: uint8(clientSecretsCount),
-		SecretSize:   uint16(kem.CiphertextSize()),
+		SecretSize:   uint16(cu.CipherTextSizeByKeyType[receiverKey.GetKeyType()].CipherText),
 	}
 	send(t, sharedSecretBundleDescResponse)
 
@@ -635,16 +635,12 @@ func givenSharedSecretReceive(t *testing.T, recv func(t *testing.T, msg interfac
 	}
 
 	ciphertext := make([]byte, sharedSecretBundleDescResponse.SecretSize)
-	kem, _ := receiverKey.GetKemSike()
-	if kem.CiphertextSize() != len(ciphertext) {
+	if cu.CipherTextSizeByKeyType[receiverKey.GetKeyType()].CipherText != len(ciphertext) {
 		t.Error("secret size sent by server is wrong")
 	}
-	receiverSikePvt := cu.SikePrivateKeyFromBytes(receiverKey.GetPrivateKey())
-	receiverSikePub := cu.SikePublicKeyFromBytes(receiverKey.GetPublicKey())
 	for i := 0; i < int(sharedSecretBundleDescResponse.SecretsCount); i++ {
 		recv(t, ciphertext)
-		sharedSecret.Shared[i] = make([]byte, kem.SharedSecretSize())
-		err := kem.Decapsulate(sharedSecret.Shared[i], receiverSikePvt, receiverSikePub, ciphertext)
+		sharedSecret.Shared[i], err = cu.Dencapsulate(receiverKey.GetPublicKey(), receiverKey.GetPrivateKey(), ciphertext, receiverKey.GetKeyType())
 		if err != nil {
 			t.Error("kem failed to decapsulate", err)
 		}
@@ -729,15 +725,15 @@ func sRecv(t *testing.T, msg interface{}) {
 	}
 }
 
-func calculateKeySizeKemsCountAndKem(clientKey *config.Key) (keySize int, secretsCount int, kem *sidh.KEM) {
+func calculateKeySizeKemsCountAndKem(clientKey *config.Key) (keySize int, secretsCount int) {
 	keySize = (256 / 8) + (96 / 8)
 	if clientHello.WireType == msg.ClientHelloWireTypeTripleAES256 {
 		keySize = keySize * 3
 	}
-	kem, _ = clientKey.GetKemSike()
-	secretsCount = keySize / kem.SharedSecretSize()
-	if (keySize % kem.SharedSecretSize()) != 0 {
+	sharedSecretBytes := cu.CipherTextSizeByKeyType[clientKey.GetKeyType()].SharedSecret
+	secretsCount = keySize / sharedSecretBytes
+	if (keySize % sharedSecretBytes) != 0 {
 		secretsCount += 1
 	}
-	return keySize, secretsCount, kem
+	return keySize, secretsCount
 }

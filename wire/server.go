@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"github.com/cloudflare/circl/dh/sidh"
 	"github.com/google/logger"
 	"github.com/kuking/go-pqsw/config"
 	"github.com/kuking/go-pqsw/cryptoutil"
@@ -62,7 +61,7 @@ func ServerHandshake(conn net.Conn, cfg *config.Config) (wire *SecureWire, err e
 		err = serr.err
 		return
 	}
-	keySize := calculateKeySize(clientHello)
+	keySize := calculateSymmetricKeySize(clientHello)
 	keysBytes := mixSharedSecretsForKey(srvShare, cliShare, keySize)
 	wire, err = NewSecureWireAES256CGM(keysBytes[0:32], keysBytes[32:32+12], conn)
 	if terminateHandshakeOnError(conn, err, "establishing secure wire") {
@@ -154,7 +153,7 @@ func negotiateSharedSecrets(conn net.Conn, cfg *config.Config, clientHello *msg.
 	serverShare *msg.SharedSecret,
 	serr *ServerError) {
 
-	keySize := calculateKeySize(clientHello)
+	symmetricKeySize := calculateSymmetricKeySize(clientHello)
 
 	serverKey, err := cfg.GetKeyByID(cfg.ServerKey)
 	if err != nil {
@@ -182,18 +181,12 @@ func negotiateSharedSecrets(conn net.Conn, cfg *config.Config, clientHello *msg.
 		return clientShare, serverShare, Disconnect(err, msg.DisconnectCauseNone)
 	}
 
-	kem, err := serverKey.GetKemSike()
-	if err != nil {
-		return clientShare, serverShare,
-			Disconnect(errors.Wrap(err, "could not generate kem using server key"), msg.DisconnectCauseSeverMisconfiguration)
-	}
-
-	clientShare, serr = readSharedSecret(conn, serverKey, cfg, keySize, kem)
+	clientShare, serr = readSharedSecret(conn, serverKey, cfg, symmetricKeySize)
 	if serr != nil {
 		return clientShare, serverShare, serr
 	}
 
-	serverShare, serr = sendSharedSecret(conn, clientKey, serverPotp, keySize, kem)
+	serverShare, serr = sendSharedSecret(conn, clientKey, serverPotp, symmetricKeySize)
 	if serr != nil {
 		return clientShare, serverShare, serr
 	}
@@ -201,10 +194,10 @@ func negotiateSharedSecrets(conn net.Conn, cfg *config.Config, clientHello *msg.
 	return clientShare, serverShare, nil
 }
 
-func sendSharedSecret(conn net.Conn, receiver *config.Key, potp *config.Potp, keySize int, kem *sidh.KEM) (res *msg.SharedSecret, serr *ServerError) {
-	potpBytes, potpOfs := potp.PickOTP(keySize)
-	secretsCount := calculateSharedSecretsCount(kem, keySize)
-	//fmt.Printf("sent: otp ofs=%v len=%v val=%v\n", potpOfs, keySize, base64.StdEncoding.EncodeToString(potpBytes))
+func sendSharedSecret(conn net.Conn, receiver *config.Key, potp *config.Potp, symmetricKeySize int) (res *msg.SharedSecret, serr *ServerError) {
+	potpBytes, potpOfs := potp.PickOTP(symmetricKeySize)
+	secretsCount := calculateSharedSecretsCount(receiver.GetKeyType(), symmetricKeySize)
+	//fmt.Printf("sent: otp ofs=%v len=%v val=%v\n", potpOfs, symmetricKeySize, base64.StdEncoding.EncodeToString(potpBytes))
 	res = &msg.SharedSecret{
 		Otp:    potpBytes,
 		Shared: make([][]byte, secretsCount),
@@ -213,7 +206,7 @@ func sendSharedSecret(conn net.Conn, receiver *config.Key, potp *config.Potp, ke
 		PotpIdUsed:   potp.GetPotpIdAs32Byte(),
 		PotpOffset:   potpOfs,
 		SecretsCount: uint8(secretsCount),
-		SecretSize:   uint16(kem.CiphertextSize()),
+		SecretSize:   uint16(cryptoutil.CipherTextSizeByKeyType[receiver.GetKeyType()].CipherText),
 	}
 	err := binary.Write(conn, binary.LittleEndian, &bundleDesc)
 	if err != nil {
@@ -236,17 +229,18 @@ func sendSharedSecret(conn net.Conn, receiver *config.Key, potp *config.Potp, ke
 	return res, nil
 }
 
-func readSharedSecret(conn net.Conn, receiver *config.Key, cfg *config.Config, keySize int, kem *sidh.KEM) (res *msg.SharedSecret, serr *ServerError) {
+func readSharedSecret(conn net.Conn, receiver *config.Key, cfg *config.Config, symmetricKeySize int) (res *msg.SharedSecret, serr *ServerError) {
 	bundleDesc := msg.SharedSecretBundleDescriptionResponse{}
 	err := binary.Read(conn, binary.LittleEndian, &bundleDesc)
 	if err != nil {
 		return res, Disconnect(err, msg.DisconnectCauseNone)
 	}
 
-	if int(bundleDesc.SecretSize) != kem.CiphertextSize() {
+	cipherTextSize := cryptoutil.CipherTextSizeByKeyType[receiver.GetKeyType()].CipherText
+	if int(bundleDesc.SecretSize) != cipherTextSize {
 		return nil, Disconnect(
 			errors.New(fmt.Sprintf("client secret-size not the expected to be provided=%v, expected=%v",
-				bundleDesc.SecretSize, kem.CiphertextSize())),
+				bundleDesc.SecretSize, cipherTextSize)),
 			msg.DisconnectCauseNotEnoughSecurityRequested)
 	}
 
@@ -256,7 +250,7 @@ func readSharedSecret(conn net.Conn, receiver *config.Key, cfg *config.Config, k
 			msg.DisconnectCauseNotEnoughSecurityRequested)
 	}
 
-	secretsCount := calculateSharedSecretsCount(kem, keySize)
+	secretsCount := calculateSharedSecretsCount(receiver.GetKeyType(), symmetricKeySize)
 	if int(bundleDesc.SecretsCount) != secretsCount {
 		return nil, Disconnect(
 			errors.New(fmt.Sprintf("client secret count out invalid, for current keys it should be: %v, received: %v", secretsCount, bundleDesc.SecretsCount)),
@@ -269,7 +263,7 @@ func readSharedSecret(conn net.Conn, receiver *config.Key, cfg *config.Config, k
 			Disconnect(errors.WithMessagef(err, "potp provided by not recognised, id=%v", bundleDesc.PotpIdAsString()),
 				msg.DisconnectCausePotpNotRecognised)
 	}
-	otpBytes, err := otp.ReadOTP(keySize, bundleDesc.PotpOffset)
+	otpBytes, err := otp.ReadOTP(symmetricKeySize, bundleDesc.PotpOffset)
 	if err != nil {
 		return res, Disconnect(err, msg.DisconnectCauseSeverMisconfiguration)
 	}
@@ -326,7 +320,7 @@ func mixSharedSecretsForKey(serverShare *msg.SharedSecret, clientShare *msg.Shar
 	return res
 }
 
-func calculateKeySize(clientHello *msg.ClientHello) int {
+func calculateSymmetricKeySize(clientHello *msg.ClientHello) int {
 	keySize := (256 / 8) + (96 / 8)
 	if clientHello.WireType == msg.ClientHelloWireTypeTripleAES256 {
 		keySize = keySize * 3
@@ -334,9 +328,10 @@ func calculateKeySize(clientHello *msg.ClientHello) int {
 	return keySize
 }
 
-func calculateSharedSecretsCount(kem *sidh.KEM, keySize int) int {
-	secretsCount := keySize / kem.SharedSecretSize()
-	if (keySize % kem.SharedSecretSize()) != 0 {
+func calculateSharedSecretsCount(keyType cryptoutil.KeyType, symmetricKeySize int) int {
+	sharedSecretSize := cryptoutil.CipherTextSizeByKeyType[keyType].SharedSecret
+	secretsCount := symmetricKeySize / sharedSecretSize
+	if (symmetricKeySize % sharedSecretSize) != 0 {
 		secretsCount += 1
 	}
 	return secretsCount
