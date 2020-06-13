@@ -17,11 +17,6 @@ var configFile string
 var workMode int
 var doHelp bool
 
-//FIXME:
-// fix it to $ pqswtun -c config.conf wrap 4444:localhost:8888
-// (instead of -l 4444)
-// enc / dec
-
 const (
 	WorkModeEntry = iota
 	WorkModeExit  = iota
@@ -30,7 +25,7 @@ const (
 )
 
 func doParsing() bool {
-	flag.StringVar(&configFile, "c", "pqswtun.conf", "PQSW config file")
+	flag.StringVar(&configFile, "c", "clis.conf", "PQSW config file")
 	flag.BoolVar(&doHelp, "h", false, "Show usage")
 	flag.Parse()
 	if doHelp {
@@ -39,15 +34,15 @@ func doParsing() bool {
 		fmt.Println(`
 NOTES:
 
-entry: accepts plain text traffic, forwarding it securely to the host:hostport i.e. (localhost)$ pqswtun entry localhost:1022:remote:2222
- exit: takes the encrypted traffic, decrypts it and forwards it to the host:hostport i.e (remote)$ pqswtun exit 2222:localhost:22
+entry: accepts plain text traffic, forwarding it securely to the host:hostport i.e. (localhost)$ clis entry localhost:1022:remote:2222
+ exit: takes the encrypted traffic, decrypts it and forwards it to the host:hostport i.e (remote)$ clis exit 2222:localhost:22
 
-A configuration file is required (default: pqswtun.conf) with at least three entries:
+A configuration file is required (default: clis.conf) with at least three entries:
  - a full private/public key for the client
  - a public key for the host
  - a pre-shared pragmatic one-time-pad (potp)
 
-For creating a configuration file, use the utility pqswcfg, i.e. $ pqswcfg create vanilla pqswtun.cfg
+For creating a configuration file, use the utility pqswcfg, i.e. $ pqswcfg create vanilla clis.cfg
 the configuration file can be easily copied-and-pasted and manipulated as it is a json file.
 
 By default it will listen to as many connections as possible. Further documentation here: https://github.com/kuking/go-pqsw`)
