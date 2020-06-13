@@ -14,7 +14,7 @@ func clientSetup() {
 	setup()
 	givenServerAndClientKeys(cryptoutil.KeyTypeSidhFp503) //XXX FIXME test with multiple keys types
 	givenPotpInConfig()
-	go ClientHandshake(cPipe, cfg)
+	go ClientHandshake(cPipe, cliCfg)
 }
 
 func TestClient_ConnectWithNoise(t *testing.T) {
@@ -80,7 +80,7 @@ func TestClient_ClientHello(t *testing.T) {
 		clientHello.WireType != msg.ClientHelloWireTypeTripleAES256 {
 		t.Error("Client sent an unknown wire type")
 	}
-	clientKey, err := cfg.GetKeyByID(cfg.ClientKey)
+	clientKey, err := cliCfg.GetKeyByCN(cliCfg.PreferredKeyCN)
 	if err != nil {
 		t.Error("could not read key from config ... test is wrong", err)
 	}
@@ -127,9 +127,9 @@ func TestClient_ServerShareSecretRequest_andResponse(t *testing.T) {
 
 	givenClientSolvesPuzzle(t)
 	_, keySize := givenClientHello(t)
-	serverKey := givenServerShareRequest(t)
+	clientKey := givenServerShareRequest(t)
 
-	givenSharedSecretReceive(t, sRecv, serverKey, nil, keySize)
+	givenSharedSecretReceive(t, sRecv, clientKey, nil, keySize)
 }
 
 func TestClient_ShareSecretsExchange(t *testing.T) {
@@ -138,13 +138,13 @@ func TestClient_ShareSecretsExchange(t *testing.T) {
 
 	givenClientSolvesPuzzle(t)
 	clientKey, keySize := givenClientHello(t)
-	serverKey := givenServerShareRequest(t)
-	potp, err := cfg.GetPotpByID(cfg.ServerPotp)
+	givenServerShareRequest(t)
+	potp, err := cliCfg.GetPotpByCN(cliCfg.PreferredPotpCN)
 	if err != nil {
 		t.Errorf("could not retrieve potp, err=%v", err)
 	}
 
-	clientShare := givenSharedSecretReceive(t, sRecv, serverKey, nil, keySize)
+	clientShare := givenSharedSecretReceive(t, sRecv, clientKey, nil, keySize)
 	serverShare := givenSharedSecretSend(t, sSend, clientKey, potp)
 	keysBytes := mixSharedSecretsForKey(serverShare, clientShare, keySize)
 
@@ -160,13 +160,13 @@ func TestClient_SecureWireHandshakeIssues(t *testing.T) {
 
 	givenClientSolvesPuzzle(t)
 	clientKey, keySize := givenClientHello(t)
-	serverKey := givenServerShareRequest(t)
-	potp, err := cfg.GetPotpByID(cfg.ServerPotp)
+	givenServerShareRequest(t)
+	potp, err := cliCfg.GetPotpByCN(cliCfg.PreferredPotpCN)
 	if err != nil {
 		t.Errorf("could not retrieve potp, err=%v", err)
 	}
 
-	clientShare := givenSharedSecretReceive(t, sRecv, serverKey, nil, keySize)
+	clientShare := givenSharedSecretReceive(t, sRecv, clientKey, nil, keySize)
 	serverShare := givenSharedSecretSend(t, sSend, clientKey, potp)
 	keysBytes := mixSharedSecretsForKey(serverShare, clientShare, keySize)
 
@@ -187,13 +187,13 @@ func TestClient_HappyPath(t *testing.T) {
 
 	givenClientSolvesPuzzle(t)
 	clientKey, keySize := givenClientHello(t)
-	serverKey := givenServerShareRequest(t)
-	potp, err := cfg.GetPotpByID(cfg.ServerPotp)
+	givenServerShareRequest(t)
+	potp, err := cliCfg.GetPotpByCN(cliCfg.PreferredPotpCN)
 	if err != nil {
 		t.Errorf("could not retrieve potp, err=%v", err)
 	}
 
-	clientShare := givenSharedSecretReceive(t, sRecv, serverKey, nil, keySize)
+	clientShare := givenSharedSecretReceive(t, sRecv, clientKey, nil, keySize)
 	serverShare := givenSharedSecretSend(t, sSend, clientKey, potp)
 	keysBytes := mixSharedSecretsForKey(serverShare, clientShare, keySize)
 
@@ -214,7 +214,7 @@ func TestClient_HappyPath(t *testing.T) {
 
 func givenClientHello(t *testing.T) (clientKey *config.Key, keySize int) {
 	sRecv(t, &clientHello)
-	clientKey, _ = cfg.GetKeyByID(clientHello.KeyIdAsString())
+	clientKey, _ = cliCfg.GetKeyByID(clientHello.KeyIdAsString())
 	keySize = calculateSymmetricKeySize(&clientHello)
 	return
 }
@@ -223,24 +223,24 @@ func givenClientSolvesPuzzle(t *testing.T) {
 	puzzleRequest = msg.PuzzleRequest{
 		Puzzle: msg.PuzzleSHA512LZ,
 		Body:   [64]byte{},
-		Param:  uint16(cfg.PuzzleDifficulty),
+		Param:  uint16(srvCfg.PuzzleDifficulty),
 	}
 	copy(puzzleRequest.Body[:], cryptoutil.RandBytes(64)[:])
 	sSend(t, &puzzleRequest)
 	sRecv(t, &puzzleResponse)
-	if !sha512lz.Verify(puzzleRequest.Body, puzzleResponse.Response, cfg.PuzzleDifficulty) {
+	if !sha512lz.Verify(puzzleRequest.Body, puzzleResponse.Response, srvCfg.PuzzleDifficulty) {
 		t.Error("client did not provide a correct solution to the puzzle")
 	}
 }
 
-func givenServerShareRequest(t *testing.T) (serverKey *config.Key) {
-	serverKey, err := cfg.GetKeyByID(cfg.ServerKey)
+func givenServerShareRequest(t *testing.T) (clientKey *config.Key) {
+	clientKey, err := cliCfg.GetKeyByCN(cliCfg.PreferredKeyCN) //DOUBLE CHECK THIS
 	if err != nil {
 		t.Errorf("could not retrieve server key from config, this is a bug in the test, err=%v", err)
 	}
 	sharedSecretRequest = msg.SharedSecretRequest{
 		RequestType: msg.SharedSecretRequestTypeKEMAndPotp,
-		KeyId:       serverKey.GetKeyIdAs32Byte(),
+		KeyId:       clientKey.IdAs32Byte(),
 	}
 	sSend(t, &sharedSecretRequest)
 	return

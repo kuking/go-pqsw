@@ -3,7 +3,7 @@ PQSWCFG_MAIN = cli/pqswcfg/main.go
 PQSWCFG_BIN = bin/pqswcfg
 
 PQSWTUN_MAIN = cli/pqswtun/main.go
-PQSWTUN_BIN = bin/pqswbin
+PQSWTUN_BIN = bin/pqswtun
 
 all: clean build test bench release coverage
 

@@ -19,7 +19,7 @@ func ClientHandshake(conn net.Conn, cfg *config.Config) (wire *SecureWire, err e
 	if terminateHandshakeOnError(conn, err, "answering puzzle") {
 		return
 	}
-	clientKey, err := cfg.GetKeyByID(cfg.ClientKey)
+	clientKey, err := cfg.GetKeyByCN(cfg.PreferredKeyCN)
 	if terminateHandshakeOnError(conn, err, "retrieving client key from configuration") {
 		return
 	}
@@ -35,7 +35,7 @@ func ClientHandshake(conn net.Conn, cfg *config.Config) (wire *SecureWire, err e
 	if terminateHandshakeOnError(conn, err, fmt.Sprintf("received server key in request unknown: %v", shareSecretReq.KeyIdPreferredAsString())) {
 		return
 	}
-	potp, err := cfg.GetPotpByID(cfg.ClientPotp)
+	potp, err := cfg.GetPotpByCN(cfg.PreferredPotpCN)
 	if terminateHandshakeOnError(conn, err, "could not retrieve server potp from config") {
 		return
 	}
@@ -98,7 +98,7 @@ func sendHello(conn net.Conn, clientKey *config.Key) (symmetricKeySize int, err 
 	clientHello := msg.ClientHello{
 		Protocol: msg.ClientHelloProtocol,
 		WireType: msg.ClientHelloWireTypeSimpleAES256,
-		KeyId:    clientKey.GetKeyIdAs32Byte(),
+		KeyId:    clientKey.IdAs32Byte(),
 	}
 	symmetricKeySize = (256 / 8) + (96 / 8)
 	if clientHello.WireType == msg.ClientHelloWireTypeTripleAES256 {

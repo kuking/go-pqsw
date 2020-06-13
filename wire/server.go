@@ -155,7 +155,7 @@ func negotiateSharedSecrets(conn net.Conn, cfg *config.Config, clientHello *msg.
 
 	symmetricKeySize := calculateSymmetricKeySize(clientHello)
 
-	serverKey, err := cfg.GetKeyByID(cfg.ServerKey)
+	serverKey, err := cfg.GetKeyByCN(cfg.PreferredKeyCN)
 	if err != nil {
 		return clientShare, serverShare,
 			Disconnect(errors.Wrap(err, "serverKey specified by configuration not found"), msg.DisconnectCauseSeverMisconfiguration)
@@ -166,7 +166,7 @@ func negotiateSharedSecrets(conn net.Conn, cfg *config.Config, clientHello *msg.
 		return clientShare, serverShare,
 			Disconnect(errors.Wrap(err, "clientKey specified not found"), msg.DisconnectCauseCounterpartyKeyIdNotRecognised)
 	}
-	serverPotp, err := cfg.GetPotpByID(cfg.ServerPotp)
+	serverPotp, err := cfg.GetPotpByCN(cfg.PreferredPotpCN)
 	if err != nil {
 		return clientShare, serverShare,
 			Disconnect(errors.Wrap(err, "serverPotp specified by configuration not found"), msg.DisconnectCauseSeverMisconfiguration)
@@ -174,7 +174,7 @@ func negotiateSharedSecrets(conn net.Conn, cfg *config.Config, clientHello *msg.
 
 	shrSecretReq := msg.SharedSecretRequest{
 		RequestType: 0,
-		KeyId:       serverKey.GetKeyIdAs32Byte(),
+		KeyId:       serverKey.IdAs32Byte(),
 	}
 	err = binary.Write(conn, binary.LittleEndian, shrSecretReq)
 	if err != nil {
@@ -203,7 +203,7 @@ func sendSharedSecret(conn net.Conn, receiver *config.Key, potp *config.Potp, sy
 		Shared: make([][]byte, secretsCount),
 	}
 	bundleDesc := msg.SharedSecretBundleDescriptionResponse{
-		PotpIdUsed:   potp.GetPotpIdAs32Byte(),
+		PotpIdUsed:   potp.IdAs32Byte(),
 		PotpOffset:   potpOfs,
 		SecretsCount: uint8(secretsCount),
 		SecretSize:   uint16(cryptoutil.CipherTextSizeByKeyType[receiver.GetKeyType()].CipherText),
@@ -215,7 +215,7 @@ func sendSharedSecret(conn net.Conn, receiver *config.Key, potp *config.Potp, sy
 
 	for secretNo := 0; secretNo < secretsCount; secretNo++ {
 		var ciphertext []byte
-		ciphertext, res.Shared[secretNo], err = cryptoutil.Encapsulate(receiver.GetPublicKey(), receiver.GetKeyType())
+		ciphertext, res.Shared[secretNo], err = cryptoutil.Encapsulate(receiver.PubBytes(), receiver.GetKeyType())
 		if err != nil {
 			return res, Disconnect(err, msg.DisconnectCauseSeverMisconfiguration)
 		}
@@ -281,7 +281,7 @@ func readSharedSecret(conn net.Conn, receiver *config.Key, cfg *config.Config, s
 			return res, Disconnect(err, msg.DisconnectCauseNone)
 		}
 		res.Shared[count], err =
-			cryptoutil.Dencapsulate(receiver.GetPublicKey(), receiver.GetPrivateKey(), cipherText, receiver.GetKeyType())
+			cryptoutil.Dencapsulate(receiver.PubBytes(), receiver.PvtBytes(), cipherText, receiver.GetKeyType())
 		//fmt.Printf("recv: secret[%v] %v (cipher: %v)\n", count, cryptoutil.EncB64(res.Shared[count]), cryptoutil.EncB64(cipherText))
 		if err != nil {
 			return res, Disconnect(err, msg.DisconnectCauseNotEnoughSecurityRequested)

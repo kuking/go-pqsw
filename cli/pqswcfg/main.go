@@ -67,21 +67,19 @@ func doCmdConfig() {
 			potpSize := 1024
 			keyType := cryptoutil.KeyTypeSidhFp503
 			cfg := config.NewEmpty()
-			key, err := cfg.CreateAndAddKey(keyType)
+			key, err := cfg.CreateAndAddKey(keyType, strconv.FormatInt(cfg.NextSequentialKeyCN(), 10))
 			panicOnErr(err)
 			if key == nil {
 				fmt.Println("Key could not be created.")
 				os.Exit(1)
 			}
-			cfg.ServerKey = key.Uuid
-			cfg.ClientKey = key.Uuid
-			potp, err := cfg.CreateAndAddInPlacePotp(potpSize)
+			cfg.PreferredKeyCN = key.CN
+			potp, err := cfg.CreateAndAddInPlacePotp(potpSize, strconv.FormatInt(cfg.NextSequentialPotpCN(), 10))
 			panicOnErr(err)
 			if potp == nil {
 				fmt.Println("Could not create PSK.")
 			}
-			cfg.ServerPotp = potp.Uuid
-			cfg.ClientPotp = potp.Uuid
+			cfg.PreferredPotpCN = potp.CN
 			fmt.Printf("Vanilla config created with Fp751 key '%v' and a PSK of %v bits '%v'\n",
 				key.Uuid, potpSize*8, potp.Uuid)
 			panicOnErr(err)
@@ -94,7 +92,6 @@ func doCmdConfig() {
 			fmt.Printf("Config file '%s' loaded, it contains:\n", args[3])
 			fmt.Println(len(cfg.Keys), "Keys")
 			fmt.Println(len(cfg.Potps), "PSKs")
-			fmt.Println(len(cfg.Uniques), "Unique replay store")
 			os.Exit(0)
 		}
 		showConfigHelp()
@@ -120,16 +117,13 @@ func doCmdKey() {
 
 				cfg, err := config.LoadFrom(filename)
 				panicOnErr(err)
-				key, err := cfg.CreateAndAddKey(keyType)
+				key, err := cfg.CreateAndAddKey(keyType, strconv.FormatInt(cfg.NextSequentialKeyCN(), 10))
 				panicOnErr(err)
-				if cfg.ServerKey == "" {
-					cfg.ServerKey = key.Uuid
-				}
-				if cfg.ClientKey == "" {
-					cfg.ClientKey = key.Uuid
+				if cfg.PreferredKeyCN == "" {
+					cfg.PreferredKeyCN = key.CN
 				}
 				panicOnErr(cfg.SaveTo(filename))
-				fmt.Println("Key generated with keyId", key.Uuid)
+				fmt.Println("Key generated with keyId", key.Uuid, "and CN", key.CN)
 				os.Exit(0)
 			} else {
 				showKeyCreateHelp()
@@ -196,11 +190,8 @@ func doCmdKey() {
 			for cfg.DeleteKeyByUUID(key.Uuid) {
 			}
 			cfg.Keys = append(cfg.Keys, key)
-			if cfg.ClientKey == "" {
-				cfg.ClientKey = key.Uuid
-			}
-			if cfg.ServerKey == "" {
-				cfg.ServerKey = key.Uuid
+			if cfg.PreferredKeyCN == "" {
+				cfg.PreferredKeyCN = key.CN
 			}
 			panicOnErr(cfg.SaveTo(args[3]))
 			os.Exit(0)
@@ -223,17 +214,14 @@ func doCmdPotp() {
 				filename := args[4]
 				cfg, err := config.LoadFrom(filename)
 				panicOnErr(err)
-				potp, err := cfg.CreateAndAddInPlacePotp(int(potpSize))
+				potp, err := cfg.CreateAndAddInPlacePotp(int(potpSize), strconv.FormatInt(cfg.NextSequentialPotpCN(), 10))
 				panicOnErr(err)
-				if cfg.ServerPotp == "" {
-					cfg.ServerPotp = potp.Uuid
-				}
-				if cfg.ClientPotp == "" {
-					cfg.ClientPotp = potp.Uuid
+				if cfg.PreferredPotpCN == "" {
+					cfg.PreferredPotpCN = potp.CN
 				}
 				err = cfg.SaveTo(filename)
 				panicOnErr(err)
-				fmt.Printf("potp of %v bytes created, with uuid %v\n", potpSize, potp.Uuid)
+				fmt.Printf("potp of %v bytes created, with uuid %v and CN %v\n", potpSize, potp.Uuid, potp.CN)
 				os.Exit(0)
 			} else {
 				showPotpCreateHelp()
@@ -265,11 +253,8 @@ func doCmdPotp() {
 			for cfg.DeletePotpByUUID(potp.Uuid) {
 			}
 			cfg.Potps = append(cfg.Potps, potp)
-			if cfg.ClientPotp == "" {
-				cfg.ClientPotp = potp.Uuid
-			}
-			if cfg.ServerPotp == "" {
-				cfg.ServerPotp = potp.Uuid
+			if cfg.PreferredPotpCN == "" {
+				cfg.PreferredPotpCN = potp.CN
 			}
 			panicOnErr(cfg.SaveTo(args[3]))
 			os.Exit(0)

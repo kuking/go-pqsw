@@ -8,10 +8,12 @@ import (
 	"github.com/pkg/errors"
 	"io/ioutil"
 	"math/big"
+	"strconv"
 )
 
 type Key struct {
 	Type string
+	CN   string
 	Uuid string
 	Pvt  string
 	Pub  string
@@ -19,29 +21,20 @@ type Key struct {
 
 type Potp struct {
 	Uuid string
+	CN   string
 	Body string
 }
 
-type Unique struct {
-	Uid  string
-	Cls  string
-	Path string
-}
-
 type Config struct {
-	Keys    []Key
-	Potps   []Potp
-	Uniques []Unique
-
-	ServerKey           string
-	ServerPotp          string
-	ClientKey           string
-	ClientPotp          string
+	Keys                []Key
+	Potps               []Potp
+	PreferredKeyCN      string
+	PreferredPotpCN     string
 	PuzzleDifficulty    int
 	RequireTripleAES256 bool
 }
 
-func (k *Key) GetKeyIdAs32Byte() [32]byte {
+func (k *Key) IdAs32Byte() [32]byte {
 	b, err := base64.StdEncoding.DecodeString(k.Uuid)
 	if err != nil || len(b) != 32 {
 		return [32]byte{}
@@ -60,17 +53,17 @@ func (k *Key) GetKeyType() cryptoutil.KeyType {
 	return cryptoutil.KeyTypeUnknown
 }
 
-func (k *Key) GetPrivateKey() (pvt []byte) {
+func (k *Key) PvtBytes() (pvt []byte) {
 	pvt, _ = base64.StdEncoding.DecodeString(k.Pvt)
 	return
 }
 
-func (k *Key) GetPublicKey() (pub []byte) {
+func (k *Key) PubBytes() (pub []byte) {
 	pub, _ = base64.StdEncoding.DecodeString(k.Pub)
 	return
 }
 
-func (p *Potp) GetPotpIdAs32Byte() [32]byte {
+func (p *Potp) IdAs32Byte() [32]byte {
 	b, err := base64.StdEncoding.DecodeString(p.Uuid)
 	if err != nil || len(b) != 32 {
 		return [32]byte{}
@@ -80,7 +73,7 @@ func (p *Potp) GetPotpIdAs32Byte() [32]byte {
 	return res
 }
 
-func (p *Potp) GetBodyAsArray() []byte {
+func (p *Potp) BodyBytes() []byte {
 	b, err := base64.StdEncoding.DecodeString(p.Body)
 	if err != nil {
 		return make([]byte, 0)
@@ -88,12 +81,12 @@ func (p *Potp) GetBodyAsArray() []byte {
 	return b
 }
 func (p *Potp) GetSize() uint64 {
-	return uint64(len(p.GetBodyAsArray()))
+	return uint64(len(p.BodyBytes()))
 }
 
 // the following does not implements file based OTPs
 func (p *Potp) PickOTP(size int) (otp []byte, offset uint64) {
-	wholeOtp := p.GetBodyAsArray()
+	wholeOtp := p.BodyBytes()
 	ofs, err := rand.Int(rand.Reader, big.NewInt(int64(len(wholeOtp))-int64(size))) // -size for the sake of simplicity
 	if err != nil {
 		panic(err)
@@ -102,7 +95,7 @@ func (p *Potp) PickOTP(size int) (otp []byte, offset uint64) {
 }
 
 func (p *Potp) ReadOTP(size int, offset uint64) ([]byte, error) {
-	wholeOtp := p.GetBodyAsArray()
+	wholeOtp := p.BodyBytes()
 	if len(wholeOtp) < int(offset) {
 		//This is important: the offset can be any value, so the length of the potp is not disclosed indirectly
 		//i.e. further improvements to the protocol has to send values greater than the potp's size,
@@ -119,7 +112,33 @@ func (p *Potp) ReadOTP(size int, offset uint64) ([]byte, error) {
 	return res, nil
 }
 
-func (c *Config) CreateAndAddKey(keyType cryptoutil.KeyType) (*Key, error) {
+func (c *Config) NextSequentialKeyCN() int64 {
+	highest := int64(0)
+	for _, key := range c.Keys {
+		n, err := strconv.ParseInt(key.CN, 10, 32)
+		if err != nil {
+			if highest < n {
+				highest = n
+			}
+		}
+	}
+	return highest + 1
+}
+
+func (c *Config) NextSequentialPotpCN() int64 {
+	highest := int64(0)
+	for _, potp := range c.Potps {
+		n, err := strconv.ParseInt(potp.CN, 10, 32)
+		if err != nil {
+			if highest < n {
+				highest = n
+			}
+		}
+	}
+	return highest + 1
+}
+
+func (c *Config) CreateAndAddKey(keyType cryptoutil.KeyType, cn string) (*Key, error) {
 
 	var pvt []byte
 	var pub []byte
@@ -132,6 +151,7 @@ func (c *Config) CreateAndAddKey(keyType cryptoutil.KeyType) (*Key, error) {
 	keyId := cryptoutil.KeyId(pub)
 	key := Key{
 		Type: cryptoutil.KeyTypeAsString[keyType],
+		CN:   cn,
 		Uuid: keyId,
 		Pvt:  cryptoutil.PrivateKeyAsString(pvt),
 		Pub:  cryptoutil.PublicKeyAsString(pub),
@@ -185,7 +205,6 @@ func (c *Config) ContainsKeyById(keyId string) bool {
 }
 
 func (c *Config) GetKeyByID(keyId string) (*Key, error) {
-	// FIXME: needs locking, not lineal search (might not be necessary ...)
 	for _, k := range c.Keys {
 		if keyId == k.Uuid {
 			return &k, nil
@@ -194,14 +213,31 @@ func (c *Config) GetKeyByID(keyId string) (*Key, error) {
 	return nil, errors.Errorf("KeyId: %v not found.", keyId)
 }
 
+func (c *Config) GetKeyByCN(cn string) (*Key, error) {
+	for _, k := range c.Keys {
+		if cn == k.CN {
+			return &k, nil
+		}
+	}
+	return nil, errors.Errorf("Key  CN: %v not found.", cn)
+}
+
 func (c *Config) GetPotpByID(potpId string) (*Potp, error) {
-	// FIXME: needs locking, not lineal search (might not be necessary ...)
 	for _, p := range c.Potps {
 		if potpId == p.Uuid {
 			return &p, nil
 		}
 	}
 	return nil, errors.Errorf("PotpId: %v not found.", potpId)
+}
+
+func (c *Config) GetPotpByCN(cn string) (*Potp, error) {
+	for _, p := range c.Potps {
+		if cn == p.CN {
+			return &p, nil
+		}
+	}
+	return nil, errors.Errorf("Potp CN: %v not found.", cn)
 }
 
 func (c *Config) DeletePotpByUUID(uuid string) bool {
@@ -218,11 +254,12 @@ func (c *Config) DeletePotpByUUID(uuid string) bool {
 	return true
 }
 
-func (c *Config) CreateAndAddInPlacePotp(size int) (*Potp, error) {
+func (c *Config) CreateAndAddInPlacePotp(size int, cn string) (*Potp, error) {
 	b := cryptoutil.RandBytes(size)
 	uuid := base64.StdEncoding.EncodeToString(cryptoutil.QuickSha256(b))
 	potp := Potp{
 		Uuid: uuid,
+		CN:   cn,
 		Body: base64.StdEncoding.EncodeToString(b),
 	}
 	c.Potps = append(c.Potps, potp)
@@ -233,9 +270,8 @@ func NewEmpty() *Config {
 	return &Config{
 		Keys:                make([]Key, 0),
 		Potps:               make([]Potp, 0),
-		Uniques:             make([]Unique, 0),
-		ServerKey:           "",
-		ServerPotp:          "",
+		PreferredKeyCN:      "",
+		PreferredPotpCN:     "",
 		PuzzleDifficulty:    16, // as 2020, roughly 100ms on Ryzen 3800X using vanilla  impl
 		RequireTripleAES256: false,
 	}
