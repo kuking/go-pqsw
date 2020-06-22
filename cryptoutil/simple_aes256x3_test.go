@@ -45,14 +45,14 @@ func TestSimpleSuperTripleEncryptDecrypt_100k_RoundTrip(t *testing.T) {
 }
 
 func TestSimpleSuperTripleEncryptDecrypt_CorruptedByteShouldErr(t *testing.T) {
+	originalN := CurrentSCryptParameters.N
+	CurrentSCryptParameters.N = 2
 	password := "a password"
 	plainText := []byte("a plain text")
 	cipherText, err := SimpleSuperTripleEncrypt(plainText, password)
 	if err != nil {
 		t.Error(err)
 	}
-	originalN := CurrentSCryptParameters.N
-	CurrentSCryptParameters.N = 2
 	for i := 0; i < len(cipherText); i++ {
 		// it is important to do it at any byte
 		corruptedCipherText := make([]byte, len(cipherText))
@@ -64,6 +64,7 @@ func TestSimpleSuperTripleEncryptDecrypt_CorruptedByteShouldErr(t *testing.T) {
 		if err == nil {
 			t.Errorf("corrupted cipher-text should have been detected, offset: %v", i)
 		}
+		// fmt.Println(err)
 	}
 	CurrentSCryptParameters.N = originalN
 }
@@ -75,7 +76,8 @@ func TestScryptParameters(t *testing.T) {
 	start := time.Now()
 	count := 3
 	for i := 0; i < count; i++ {
-		_, err := scrypt.Key(password, salt, CurrentSCryptParameters.N, CurrentSCryptParameters.R, CurrentSCryptParameters.P, keyLen)
+		_, err := scrypt.Key(password, salt,
+			int(CurrentSCryptParameters.N), int(CurrentSCryptParameters.R), int(CurrentSCryptParameters.P), keyLen)
 		if err != nil {
 			t.Error(err)
 		}
