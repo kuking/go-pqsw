@@ -2,7 +2,10 @@ package sha512lz
 
 import (
 	"crypto/rand"
+	"fmt"
+	"github.com/kuking/go-pqsw/config"
 	"testing"
+	"time"
 )
 
 var body [64]byte
@@ -65,5 +68,29 @@ func TestPendingZeros(t *testing.T) {
 	}
 	if hasAtLeastLeadingZeros(sol, 5000) == true {
 		t.Fatal("16 zeros can not have 5000 zero bits")
+	}
+}
+
+func TestPuzzleCurrentDefault(t *testing.T) {
+	cfg := config.NewEmpty() // so we take the 'default' configuration value
+
+	start := time.Now()
+	count := 5
+	var payload [64]byte
+	for lz := 0; lz < count; lz++ {
+		n, err := rand.Read(payload[:])
+		if err != nil {
+			t.Fatalf("Could not get randomness, or the expected ammount, expected: %v, error: %v", n, err)
+		}
+		solution := Solve(payload, cfg.PuzzleDifficulty)
+		if !Verify(payload, solution, cfg.PuzzleDifficulty) {
+			t.Fatalf("Solution did not verify for lz: %v, sol: %v", cfg.PuzzleDifficulty, solution)
+		}
+	}
+	duration := time.Now().Sub(start)
+	puzzleDifficultyMs := duration.Milliseconds() / int64(count)
+	fmt.Println("Puzzle Difficulty parameter", cfg.PuzzleDifficulty, "is taking on average in this CPU:", puzzleDifficultyMs, "ms")
+	if puzzleDifficultyMs < 125 { // it has high variance, it could be between 100 and 300ms
+		t.Errorf("Puzzle Difficulty should take at least 125ms, it took %vms -- Time to increase its parameters", puzzleDifficultyMs)
 	}
 }

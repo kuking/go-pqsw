@@ -302,7 +302,7 @@ func NewEmpty() *Config {
 		Potps:               make([]Potp, 0),
 		PreferredKeyCN:      "",
 		PreferredPotpCN:     "",
-		PuzzleDifficulty:    16, // as 2020, roughly 100ms on Ryzen 3800X using vanilla  impl
+		PuzzleDifficulty:    18, // as 2020, roughly 150-250ms on Ryzen 3800X using vanilla impl
 		RequireTripleAES256: false,
 	}
 }
