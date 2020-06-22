@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"github.com/kuking/go-pqsw/cryptoutil"
+	"github.com/kuking/go-pqsw/misc"
 	"github.com/pkg/errors"
 	"io/ioutil"
 	"math/big"
@@ -32,6 +33,7 @@ type Config struct {
 	PreferredPotpCN     string
 	PuzzleDifficulty    int
 	RequireTripleAES256 bool
+	passwordInDisk      string
 }
 
 func (k *Key) IdAs32Byte() [32]byte {
@@ -160,31 +162,59 @@ func (c *Config) CreateAndAddKey(keyType cryptoutil.KeyType, cn string) (*Key, e
 	return &key, nil
 }
 
-func LoadFrom(file string) (*Config, error) {
-	config := NewEmpty()
+// It will ask for a password, if required
+func LoadFromInteractive(file string) (cfg *Config, err error) {
+	cfg, err = LoadFrom(file, "")
+	if err == nil {
+		return
+	}
+	password, err := misc.GetPassword()
+	if err != nil {
+		return
+	}
+	return LoadFrom(file, password)
+}
+
+// Empty password implies no encryption
+func LoadFrom(file string, password string) (cfg *Config, err error) {
+	cfg = NewEmpty()
 	bytes, err := ioutil.ReadFile(file)
 	if err != nil {
-		return nil, err
+		return
 	}
-	err = json.Unmarshal(bytes, &config)
-	if err != nil {
-		return nil, err
+	if password != "" {
+		bytes, err = cryptoutil.SimpleSuperTripleDecrypt(bytes, password)
+		if err != nil {
+			return
+		}
 	}
-	return config, nil
+	err = json.Unmarshal(bytes, &cfg)
+	cfg.passwordInDisk = password
+	return
 }
 
-func (c *Config) SaveTo(file string) error {
+func (c *Config) SaveTo(file string) (err error) {
 	b, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
-		return err
+		return
+	}
+	if c.passwordInDisk != "" {
+		b, err = cryptoutil.SimpleSuperTripleEncrypt(b, c.passwordInDisk)
+		if err != nil {
+			return
+		}
 	}
 	err = ioutil.WriteFile(file, b, 0o600)
-	if err != nil {
-		return err
-	}
-	return nil
+	return
 }
 
+func (c *Config) SetDiskEncryptionPassword(password string) {
+	c.passwordInDisk = password
+}
+
+func (c *Config) HasDiskEncryptionPassword() bool {
+	return c.passwordInDisk != ""
+}
 func (c *Config) DeleteKeyByUUID(uuid string) bool {
 	delIdx := -1
 	for idx, key := range c.Keys {

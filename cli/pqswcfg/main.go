@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/kuking/go-pqsw/config"
 	"github.com/kuking/go-pqsw/cryptoutil"
+	"github.com/kuking/go-pqsw/misc"
 	"io/ioutil"
 	"log"
 	"os"
@@ -85,9 +86,51 @@ func doCmdConfig() {
 			panicOnErr(err)
 			saveConfigAndFinish(cfg, filename)
 		}
+		if len(args) == 4 && args[2] == "encrypt" {
+			filename := args[3]
+			cfg, err := config.LoadFromInteractive(filename)
+			if err != nil {
+				fmt.Println("Could not read the config file", err)
+				os.Exit(1)
+			}
+			if cfg.HasDiskEncryptionPassword() {
+				fmt.Println("Changing current encryption password, please enter the new one (enter twice):")
+			} else {
+				fmt.Println("Encrypting the configuration file with a password (enter twice):")
+			}
+			pass1, err := misc.GetPassword()
+			if err != nil {
+				panic(err)
+			}
+			pass2, err := misc.GetPassword()
+			if err != nil {
+				panic(err)
+			}
+			if pass1 != pass2 {
+				fmt.Println("I am sorry the passwords do not match.")
+			}
+			cfg.SetDiskEncryptionPassword(pass1)
+			saveConfigAndFinish(cfg, filename)
+		}
+		if len(args) == 4 && args[2] == "decrypt" {
+			filename := args[3]
+			cfg, err := config.LoadFromInteractive(filename)
+			if err != nil {
+				fmt.Println("Could not read the config file", err)
+				os.Exit(1)
+			}
+			if !cfg.HasDiskEncryptionPassword() {
+				fmt.Println("The configuration file does not seems to be encrypted.")
+				os.Exit(1)
+			} else {
+				fmt.Println("WARNING: The configuration file encryption has been removed. Keys are now in plain-text.")
+			}
+			cfg.SetDiskEncryptionPassword("")
+			saveConfigAndFinish(cfg, filename)
+		}
 		if len(args) == 4 && args[2] == "show" {
 			filename := args[3]
-			cfg, err := config.LoadFrom(filename)
+			cfg, err := config.LoadFromInteractive(filename)
 			panicOnErr(err)
 			fmt.Printf("Config file '%s' loaded, it contains:\n", args[3])
 			fmt.Println(len(cfg.Keys), "Keys")
@@ -115,7 +158,7 @@ func doCmdKey() {
 				}
 				filename := args[4]
 
-				cfg, err := config.LoadFrom(filename)
+				cfg, err := config.LoadFromInteractive(filename)
 				panicOnErr(err)
 				key, err := cfg.CreateAndAddKey(keyType, strconv.FormatInt(cfg.NextSequentialKeyCN(), 10))
 				panicOnErr(err)
@@ -132,7 +175,7 @@ func doCmdKey() {
 		if len(args) == 5 && args[2] == "delete" {
 			uuid := args[3]
 			filename := args[4]
-			cfg, err := config.LoadFrom(filename)
+			cfg, err := config.LoadFromInteractive(filename)
 			panicOnErr(err)
 			if cfg.DeleteKeyByUUID(uuid) {
 				panicOnErr(cfg.SaveTo(filename))
@@ -144,7 +187,7 @@ func doCmdKey() {
 			}
 		}
 		if len(args) == 4 && args[2] == "list" {
-			cfg, err := config.LoadFrom(args[3])
+			cfg, err := config.LoadFromInteractive(args[3])
 			panicOnErr(err)
 			for _, key := range cfg.Keys {
 				ktype := "PUBONLY"
@@ -156,7 +199,7 @@ func doCmdKey() {
 			os.Exit(0)
 		}
 		if len(args) == 5 && args[2] == "export" {
-			cfg, err := config.LoadFrom(args[4])
+			cfg, err := config.LoadFromInteractive(args[4])
 			fullKey := args[3][0:5] == "full@"
 			pubKey := args[3][0:4] == "pub@"
 			if !fullKey && !pubKey {
@@ -178,7 +221,7 @@ func doCmdKey() {
 			os.Exit(0)
 		}
 		if len(args) == 4 && args[2] == "import" {
-			cfg, err := config.LoadFrom(args[3])
+			cfg, err := config.LoadFromInteractive(args[3])
 			panicOnErr(err)
 			key := config.Key{}
 			bytes, err := ioutil.ReadAll(os.Stdin)
@@ -212,7 +255,7 @@ func doCmdPotp() {
 					panicOnErr(err)
 				}
 				filename := args[4]
-				cfg, err := config.LoadFrom(filename)
+				cfg, err := config.LoadFromInteractive(filename)
 				panicOnErr(err)
 				potp, err := cfg.CreateAndAddInPlacePotp(int(potpSize), strconv.FormatInt(cfg.NextSequentialPotpCN(), 10))
 				panicOnErr(err)
@@ -228,7 +271,7 @@ func doCmdPotp() {
 			}
 		}
 		if len(args) == 5 && args[2] == "export" {
-			cfg, err := config.LoadFrom(args[4])
+			cfg, err := config.LoadFromInteractive(args[4])
 			potpNo, err := strconv.ParseInt(args[3][1:], 10, 16)
 			panicOnErr(err)
 			for n, key := range cfg.Potps {
@@ -241,7 +284,7 @@ func doCmdPotp() {
 			os.Exit(0)
 		}
 		if len(args) == 4 && args[2] == "import" {
-			cfg, err := config.LoadFrom(args[3])
+			cfg, err := config.LoadFromInteractive(args[3])
 			panicOnErr(err)
 			potp := config.Potp{}
 			bytes, err := ioutil.ReadAll(os.Stdin)
@@ -294,6 +337,8 @@ func showConfigHelp() {
 
 The Sub commands are:
          create    creates an empty new configuration file
+         encrypt   encrypts the configuration file with a text password (or changes its password)
+         decrypt   removes the encryption from the configuration file
          vanilla   creates a new configuration file with typical defaults
          show      loads a configuration file and shows details
          verify    verifies its contents are coherent and valid`)

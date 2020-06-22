@@ -161,7 +161,7 @@ func doListen(cfg *config.Config) {
 
 func main() {
 	if doParsing() {
-		cfg, err := config.LoadFrom(configFile)
+		cfg, err := config.LoadFromInteractive(configFile)
 		if err != nil {
 			fmt.Println(fmt.Errorf("could not read the config file, err=%v", err))
 			os.Exit(-1)

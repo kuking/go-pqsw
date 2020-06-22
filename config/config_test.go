@@ -35,7 +35,7 @@ func TestLoadSaveRoundTrip(t *testing.T) {
 	err = original.SaveTo(tmpFile.Name())
 	fatalOnErr(t, err)
 
-	loaded, err := LoadFrom(tmpFile.Name())
+	loaded, err := LoadFromInteractive(tmpFile.Name())
 	fatalOnErr(t, err)
 
 	var originalBytes bytes.Buffer
