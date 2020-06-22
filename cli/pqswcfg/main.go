@@ -108,6 +108,7 @@ func doCmdConfig() {
 			}
 			if pass1 != pass2 {
 				fmt.Println("I am sorry the passwords do not match.")
+				os.Exit(1)
 			}
 			cfg.SetDiskEncryptionPassword(pass1)
 			saveConfigAndFinish(cfg, filename)
