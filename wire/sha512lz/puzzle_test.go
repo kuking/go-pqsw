@@ -75,7 +75,7 @@ func TestPuzzleCurrentDefault(t *testing.T) {
 	cfg := config.NewEmpty() // so we take the 'default' configuration value
 
 	start := time.Now()
-	count := 5
+	count := 8
 	var payload [64]byte
 	for lz := 0; lz < count; lz++ {
 		n, err := rand.Read(payload[:])
