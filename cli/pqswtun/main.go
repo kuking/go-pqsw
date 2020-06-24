@@ -48,8 +48,8 @@ the configuration file can be easily copied-and-pasted and manipulated as it is 
 By default it will listen to as many connections as possible. Further documentation here: https://github.com/kuking/go-pqsw`)
 		return false
 	}
-	if flag.NArg() > 2 {
-		fmt.Print("Too many arguments.")
+	if flag.NArg() != 2 {
+		fmt.Println("You need to provide two parameters: working mode and binding.")
 		return false
 	}
 	if flag.NArg() == 0 {
