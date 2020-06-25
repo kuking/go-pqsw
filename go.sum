@@ -6,8 +6,8 @@ github.com/davecgh/go-spew v1.1.0 h1:ZDRjVQ15GmhC3fiQ8ni8+OwkZQO4DARzQgrnXU1Liz8
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/google/logger v1.1.0 h1:saB74Etb4EAJNH3z74CVbCKk75hld/8T0CsXKetWCwM=
 github.com/google/logger v1.1.0/go.mod h1:w7O8nrRr0xufejBlQMI83MXqRusvREoJdaAxV+CoAB4=
-github.com/kuking/go-frodokem v1.0.0 h1:CNB/7HWEVjGcsajUn2pz+eiPyU7Hc+y6WpotpC9fqks=
-github.com/kuking/go-frodokem v1.0.0/go.mod h1:TzD0W9QnVOcwigeSySEuNZfJaGxWRtFRb7hXe/w/waI=
+github.com/kuking/go-frodokem v1.0.1 h1:13bks3u4CPpvUtOLttT+A37j9myV4kLnS7Z3qDiTm4o=
+github.com/kuking/go-frodokem v1.0.1/go.mod h1:TzD0W9QnVOcwigeSySEuNZfJaGxWRtFRb7hXe/w/waI=
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
 github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
