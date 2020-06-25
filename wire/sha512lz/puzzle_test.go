@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"github.com/kuking/go-pqsw/config"
+	"sort"
 	"testing"
 	"time"
 )
@@ -74,23 +75,30 @@ func TestPendingZeros(t *testing.T) {
 func TestPuzzleCurrentDefault(t *testing.T) {
 	cfg := config.NewEmpty() // so we take the 'default' configuration value
 
-	start := time.Now()
-	count := 10
+	count := 20
+	durations := make([]int, count)
 	var payload [64]byte
 	for lz := 0; lz < count; lz++ {
 		n, err := rand.Read(payload[:])
 		if err != nil {
 			t.Fatalf("Could not get randomness, or the expected ammount, expected: %v, error: %v", n, err)
 		}
+		start := time.Now()
 		solution := Solve(payload, cfg.PuzzleDifficulty)
+		duration := time.Now().Sub(start)
+		durations[lz] = int(duration.Milliseconds())
 		if !Verify(payload, solution, cfg.PuzzleDifficulty) {
 			t.Fatalf("Solution did not verify for lz: %v, sol: %v", cfg.PuzzleDifficulty, solution)
 		}
 	}
-	duration := time.Now().Sub(start)
-	puzzleDifficultyMs := duration.Milliseconds() / int64(count)
-	fmt.Println("Puzzle Difficulty parameter", cfg.PuzzleDifficulty, "is taking on average in this CPU:", puzzleDifficultyMs, "ms")
-	if puzzleDifficultyMs < 125 { // it has high variance, it could be between 100 and 300ms
-		t.Errorf("Puzzle Difficulty should take at least 125ms, it took %vms -- Time to increase its parameters", puzzleDifficultyMs)
+	sort.Ints(durations)
+	q3 := durations[count*3/4]
+	fmt.Printf("Difficulty=%v, durations in this CPU: %v, q3=%v\n", cfg.PuzzleDifficulty, durations, q3)
+	if q3 < 150 { // it has high variance, it could be between 100 and 300ms
+		t.Errorf("Puzzle solving should take in the 75%% quartile at least 150ms, it was %v ms.\n"+
+			"(We use the 3rdQ as this test has big variances on small quantities... and we want to keep it fast)\n"+
+			"Durations: %v ms\n"+
+			"=> CPUs have improved! It is time to increase the default in Config.PuzzleDifficulty (currently set to %v).",
+			q3, durations, cfg.PuzzleDifficulty)
 	}
 }
