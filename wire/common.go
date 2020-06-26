@@ -16,3 +16,23 @@ func terminateHandshakeOnError(conn net.Conn, err error, explanation string) boo
 	}
 	return true
 }
+
+func BuildSecureWire(keysBytes []byte, conn net.Conn) (wire *SecureWire, err error) {
+	ofs := 0
+	oneKeySize := 32
+	oneNonceSize := 12
+	if len(keysBytes) == oneKeySize+oneNonceSize { // SimpleAES256
+		return NewSecureWireAES256CGM(keysBytes[ofs:ofs+oneKeySize], keysBytes[ofs+oneKeySize:ofs+oneKeySize+oneNonceSize], conn)
+	}
+	w2, err := NewSecureWireAES256CGM(keysBytes[ofs:ofs+oneKeySize], keysBytes[ofs+oneKeySize:ofs+oneKeySize+oneNonceSize], conn)
+	if err != nil {
+		return
+	}
+	ofs = ofs + oneKeySize + oneNonceSize
+	w1, err := NewSecureWireAES256CGM(keysBytes[ofs:ofs+oneKeySize], keysBytes[ofs+oneKeySize:ofs+oneKeySize+oneNonceSize], w2)
+	if err != nil {
+		return
+	}
+	ofs = ofs + oneKeySize + oneNonceSize
+	return NewSecureWireAES256CGM(keysBytes[ofs:ofs+oneKeySize], keysBytes[ofs+oneKeySize:ofs+oneKeySize+oneNonceSize], w1)
+}

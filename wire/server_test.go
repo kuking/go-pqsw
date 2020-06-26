@@ -41,6 +41,15 @@ func setup() {
 
 func serverSetup() {
 	setup()
+	srvCfg.TripleAES256 = config.TripleAES256Disabled
+	cliCfg.TripleAES256 = config.TripleAES256Disabled
+	go ServerHandshake(sPipe, srvCfg)
+}
+
+func serverSetupWithTripleAES256() {
+	setup()
+	srvCfg.TripleAES256 = config.TripleAES256Required
+	cliCfg.TripleAES256 = config.TripleAES256Required
 	go ServerHandshake(sPipe, srvCfg)
 }
 
@@ -143,7 +152,7 @@ func TestServerClientHello_InvalidProtocolVersion(t *testing.T) {
 	defer cleanup()
 	givenServerAndClientKeys(cu.KeyTypeSidhFp434)
 	givenPuzzleAnswered(t)
-	givenValidClientHello()
+	givenValidClientHello(t)
 	clientHello.Protocol = 1234
 	cSend(t, clientHello)
 	assertServerClosedConnectionWithCause(t, msg.DisconnectCauseProtocolRequestedNotSupported)
@@ -154,20 +163,68 @@ func TestServerClientHello_InvalidWireType(t *testing.T) {
 	defer cleanup()
 	givenServerAndClientKeys(cu.KeyTypeSidhFp434)
 	givenPuzzleAnswered(t)
-	givenValidClientHello()
+	givenValidClientHello(t)
 	clientHello.WireType = 1234
 	cSend(t, clientHello)
 	assertServerClosedConnectionWithCause(t, msg.DisconnectCauseProtocolRequestedNotSupported)
 }
 
+func TestServerClientHello_WireType_TripleAES256_Options(t *testing.T) {
+	testCases := [][]config.TripleAES256Config{ // server, client, outcome
+		{config.TripleAES256Required, config.TripleAES256Required, "triple"},
+		{config.TripleAES256Required, config.TripleAES256Allowed, "triple"},
+		{config.TripleAES256Required, config.TripleAES256Disabled, "server-disconnects-not-enough-security"},
+		{config.TripleAES256Allowed, config.TripleAES256Required, "triple"},
+		{config.TripleAES256Allowed, config.TripleAES256Allowed, "triple"},
+		{config.TripleAES256Allowed, config.TripleAES256Disabled, "simple"},
+		{config.TripleAES256Disabled, config.TripleAES256Required, "server-disconnects-too-much-security"},
+		{config.TripleAES256Disabled, config.TripleAES256Allowed, "simple"},
+		{config.TripleAES256Disabled, config.TripleAES256Disabled, "simple"},
+	}
+	for n, testCase := range testCases {
+		t.Run(fmt.Sprintf("case=%v srv=%v cli=%v outcome=%v", n, testCase[0], testCase[1], testCase[2]),
+			func(t *testing.T) {
+				serverSetup()
+				defer cleanup()
+				srvCfg.TripleAES256 = testCase[0]
+				cliCfg.TripleAES256 = testCase[1]
+				outcome := testCase[2]
+				givenPotpInConfig()
+				givenServerAndClientKeys(cu.KeyTypeSidhFp434)
+				givenPuzzleAnswered(t)
+				givenValidClientHello(t)
+				cSend(t, clientHello)
+				if outcome == "server-disconnects-not-enough-security" {
+					assertServerClosedConnectionWithCause(t, msg.DisconnectCauseNotEnoughSecurityRequested)
+				} else if outcome == "server-disconnects-too-much-security" {
+					assertServerClosedConnectionWithCause(t, msg.DisconnectCauseTooMuchSecurityRequested)
+				} else if outcome == "simple" {
+					cRecv(t, &sharedSecretRequest)
+					if sharedSecretRequest.WireType != msg.WireTypeSimpleAES256 {
+						t.Errorf("expected server to decide to establish a SimpleAES256, we got: %v",
+							sharedSecretRequest.WireType)
+					}
+				} else if outcome == "triple" {
+					cRecv(t, &sharedSecretRequest)
+					if sharedSecretRequest.WireType != msg.WireTypeTripleAES256 {
+						t.Errorf("expected server to decide to establish a TripleAES256, we got: %v",
+							sharedSecretRequest.WireType)
+					}
+				} else {
+					t.Error("unimplemented yet")
+				}
+			})
+	}
+}
+
 func TestServerClientHello_WireType_TripleAES256(t *testing.T) {
-	serverSetup()
+	serverSetupWithTripleAES256()
 	defer cleanup()
 	givenPotpInConfig()
 	givenServerAndClientKeys(cu.KeyTypeSidhFp434)
 	givenPuzzleAnswered(t)
-	givenValidClientHello()
-	clientHello.WireType = msg.ClientHelloWireTypeTripleAES256
+	givenValidClientHello(t)
+	clientHello.WireType = msg.WireTypeTripleAES256
 	cSend(t, clientHello)
 	cRecv(t, &sharedSecretRequest)
 	assertConnectionStillOpen(t)
@@ -176,10 +233,10 @@ func TestServerClientHello_WireType_TripleAES256(t *testing.T) {
 func TestServerClientHello_ServerDisconnectsWhenTripleAES256Required(t *testing.T) {
 	serverSetup()
 	defer cleanup()
-	srvCfg.RequireTripleAES256 = true
+	srvCfg.TripleAES256 = config.TripleAES256Required
 	givenServerAndClientKeys(cu.KeyTypeSidhFp434)
 	givenPuzzleAnswered(t)
-	givenValidClientHello()
+	givenValidClientHello(t)
 	cSend(t, clientHello)
 	assertServerClosedConnectionWithCause(t, msg.DisconnectCauseNotEnoughSecurityRequested)
 }
@@ -189,7 +246,7 @@ func TestServerClientHello_UnrecognizedKeyId(t *testing.T) {
 	defer cleanup()
 	givenServerAndClientKeys(cu.KeyTypeSidhFp434)
 	givenPuzzleAnswered(t)
-	givenValidClientHello()
+	givenValidClientHello(t)
 	copy(clientHello.KeyId[5:], []byte{1, 2, 3, 4, 5, 6, 7, 8})
 	cSend(t, clientHello)
 	assertServerClosedConnectionWithCause(t, msg.DisconnectCauseCounterpartyKeyIdNotRecognised)
@@ -200,7 +257,7 @@ func TestServerClientHello_SendsAndDisconnects(t *testing.T) {
 	defer cleanup()
 	givenServerAndClientKeys(cu.KeyTypeSidhFp434)
 	givenPuzzleAnswered(t)
-	givenValidClientHello()
+	givenValidClientHello(t)
 	cSend(t, clientHello)
 	_ = cPipe.Close()
 	assertServerClosedConnection(t)
@@ -212,7 +269,7 @@ func TestServerClientHello_HappyPath(t *testing.T) {
 	givenServerAndClientKeys(cu.KeyTypeSidhFp434)
 	givenPotpInConfig()
 	givenPuzzleAnswered(t)
-	givenValidClientHello()
+	givenValidClientHello(t)
 	cSend(t, clientHello)
 	cRecv(t, &sharedSecretRequest)
 	assertConnectionStillOpen(t)
@@ -252,7 +309,7 @@ func TestServerSharedSecretRequest_InvalidSecretsCount(t *testing.T) {
 	givenPotpInConfig()
 	givenPuzzleAnswered(t)
 	givenClientHelloAnswered(t)
-	_, _, clientPotp := givenSharedSecretRequestReceived(t)
+	_, _, _, clientPotp := givenSharedSecretRequestReceived(t)
 
 	cSend(t, msg.SharedSecretBundleDescriptionResponse{
 		PotpIdUsed:   clientPotp.IdAs32Byte(),
@@ -270,12 +327,13 @@ func TestServerSharedSecretRequest_InvalidPotpId(t *testing.T) {
 	givenPotpInConfig()
 	givenPuzzleAnswered(t)
 	givenClientHelloAnswered(t)
-	givenSharedSecretRequestReceived(t)
+	keySize, _, clientKey, _ := givenSharedSecretRequestReceived(t)
+	kems := calculateKemsCount(clientKey, keySize)
 
 	sharedSecretBundleDescResponse = msg.SharedSecretBundleDescriptionResponse{
 		PotpIdUsed:   [32]byte{},
 		PotpOffset:   123,
-		SecretsCount: 2,
+		SecretsCount: uint8(kems),
 		SecretSize:   402,
 	}
 	cSend(t, sharedSecretBundleDescResponse)
@@ -290,8 +348,8 @@ func TestServerSharedSecretRequest_InsufficientSharedSecrets(t *testing.T) {
 	givenPuzzleAnswered(t)
 	givenClientHelloAnswered(t)
 
-	_, clientKey, clientPotp := givenSharedSecretRequestReceived(t)
-	_, kemsCount := calculateKeySizeKemsCountAndKem(clientKey)
+	keySize, _, clientKey, clientPotp := givenSharedSecretRequestReceived(t)
+	kemsCount := calculateKemsCount(clientKey, keySize)
 	cSend(t, msg.SharedSecretBundleDescriptionResponse{
 		PotpIdUsed:   clientPotp.IdAs32Byte(),
 		PotpOffset:   123,
@@ -310,8 +368,8 @@ func TestServerSharedSecretRequest_EmptyCiphertexts(t *testing.T) {
 
 	givenPuzzleAnswered(t)
 	givenClientHelloAnswered(t)
-	_, clientKey, clientPotp := givenSharedSecretRequestReceived(t)
-	_, clientSecretsCount := calculateKeySizeKemsCountAndKem(clientKey)
+	keySize, _, clientKey, clientPotp := givenSharedSecretRequestReceived(t)
+	clientSecretsCount := calculateKemsCount(clientKey, keySize)
 
 	sharedSecretBundleDescResponse = msg.SharedSecretBundleDescriptionResponse{
 		PotpIdUsed:   clientPotp.IdAs32Byte(),
@@ -337,8 +395,8 @@ func TestServerShareSecretRequest_ClientSendsInvalidSizeKem(t *testing.T) {
 
 	givenPuzzleAnswered(t)
 	givenClientHelloAnswered(t)
-	_, clientKey, clientPotp := givenSharedSecretRequestReceived(t)
-	_, clientSecretsCount := calculateKeySizeKemsCountAndKem(clientKey)
+	keySize, _, clientKey, clientPotp := givenSharedSecretRequestReceived(t)
+	clientSecretsCount := calculateKemsCount(clientKey, keySize)
 
 	sharedSecretBundleDescResponse = msg.SharedSecretBundleDescriptionResponse{
 		PotpIdUsed:   clientPotp.IdAs32Byte(),
@@ -371,9 +429,9 @@ func TestServerSharedSecretRequest_ClientSendsSharedSecretServerACK(t *testing.T
 	givenPotpInConfig()
 	givenPuzzleAnswered(t)
 	givenClientHelloAnswered(t)
-	serverKey, _, clientPotp := givenSharedSecretRequestReceived(t)
+	keySize, serverKey, _, clientPotp := givenSharedSecretRequestReceived(t)
 
-	givenSharedSecretSend(t, cSend, serverKey, clientPotp)
+	givenSharedSecretSend(t, cSend, serverKey, clientPotp, keySize)
 	cRecv(t, &sharedSecretBundleDescResponse) // implies the server is happy with the message
 }
 
@@ -384,10 +442,10 @@ func TestServerSharedSecretRequest_ClientAndServerExchangeSharedSecret(t *testin
 	givenPotpInConfig()
 	givenPuzzleAnswered(t)
 	givenClientHelloAnswered(t)
-	serverKey, clientKey, clientPotp := givenSharedSecretRequestReceived(t)
+	keySize, serverKey, clientKey, clientPotp := givenSharedSecretRequestReceived(t)
 	fullClientKey, _ := cliCfg.GetKeyByCN(clientKey.CN)
 
-	givenSharedSecretSend(t, cSend, serverKey, clientPotp)
+	givenSharedSecretSend(t, cSend, serverKey, clientPotp, keySize)
 
 	cRecv(t, &sharedSecretBundleDescResponse) // implies the server is happy with the message
 	ciphertext := make([]byte, sharedSecretBundleDescResponse.SecretSize)
@@ -412,11 +470,10 @@ func TestServer_SecureWireSetup(t *testing.T) {
 	givenPotpInConfig()
 	givenPuzzleAnswered(t)
 	givenClientHelloAnswered(t)
-	serverKey, clientKey, clientPotp := givenSharedSecretRequestReceived(t)
+	keySize, serverKey, clientKey, clientPotp := givenSharedSecretRequestReceived(t)
 	fullClientKey, _ := cliCfg.GetKeyByCN(clientKey.CN)
 
-	clientShare := givenSharedSecretSend(t, cSend, serverKey, clientPotp)
-	keySize := len(clientShare.Otp) // otp size will be the same as keySize, .. so far
+	clientShare := givenSharedSecretSend(t, cSend, serverKey, clientPotp, keySize)
 	serverShare := givenSharedSecretReceive(t, cRecv, fullClientKey, clientPotp, keySize)
 
 	sharedKey := mixSharedSecretsForKey(serverShare, clientShare, keySize) // FIXME: method is not being tested ...
@@ -433,10 +490,9 @@ func TestServer_SecureWriteGoodMessageInvalid(t *testing.T) {
 	givenPotpInConfig()
 	givenPuzzleAnswered(t)
 	givenClientHelloAnswered(t)
-	serverKey, clientKey, clientPotp := givenSharedSecretRequestReceived(t)
+	keySize, serverKey, clientKey, clientPotp := givenSharedSecretRequestReceived(t)
 	fullClientKey, _ := cliCfg.GetKeyByCN(clientKey.CN)
-	clientShare := givenSharedSecretSend(t, cSend, serverKey, clientPotp)
-	keySize := len(clientShare.Otp) // otp size will be the same as keySize, .. so far
+	clientShare := givenSharedSecretSend(t, cSend, serverKey, clientPotp, keySize)
 	serverShare := givenSharedSecretReceive(t, cRecv, fullClientKey, clientPotp, keySize)
 	sharedKey := mixSharedSecretsForKey(serverShare, clientShare, keySize)
 	sw, err := NewSecureWireAES256CGM(sharedKey[0:32], sharedKey[32:32+12], cPipe)
@@ -459,10 +515,9 @@ func TestServer_HappyPath(t *testing.T) {
 	givenPotpInConfig()
 	givenPuzzleAnswered(t)
 	givenClientHelloAnswered(t)
-	serverKey, clientKey, clientPotp := givenSharedSecretRequestReceived(t)
+	keySize, serverKey, clientKey, clientPotp := givenSharedSecretRequestReceived(t)
 	fullClientKey, _ := cliCfg.GetKeyByCN(clientKey.CN)
-	clientShare := givenSharedSecretSend(t, cSend, serverKey, clientPotp)
-	keySize := len(clientShare.Otp) // otp size will be the same as keySize, .. so far
+	clientShare := givenSharedSecretSend(t, cSend, serverKey, clientPotp, keySize)
 	serverShare := givenSharedSecretReceive(t, cRecv, fullClientKey, clientPotp, keySize)
 	sharedKey := mixSharedSecretsForKey(serverShare, clientShare, keySize)
 	sw, err := NewSecureWireAES256CGM(sharedKey[0:32], sharedKey[32:32+12], cPipe)
@@ -486,16 +541,59 @@ func TestServer_HappyPath_forEvery_KeyType(t *testing.T) {
 			givenPotpInConfig()
 			givenPuzzleAnswered(t)
 			givenClientHelloAnswered(t)
-			serverKey, clientKey, clientPotp := givenSharedSecretRequestReceived(t)
+			keySize, serverKey, clientKey, clientPotp := givenSharedSecretRequestReceived(t)
 			fullClientKey, _ := cliCfg.GetKeyByCN(clientKey.CN)
-			clientShare := givenSharedSecretSend(t, cSend, serverKey, clientPotp)
-			keySize := len(clientShare.Otp) // otp size will be the same as keySize, .. so far
+			clientShare := givenSharedSecretSend(t, cSend, serverKey, clientPotp, keySize)
 			serverShare := givenSharedSecretReceive(t, cRecv, fullClientKey, clientPotp, keySize)
 			sharedKey := mixSharedSecretsForKey(serverShare, clientShare, keySize)
 			sw, err := NewSecureWireAES256CGM(sharedKey[0:32], sharedKey[32:32+12], cPipe)
 			if err != nil {
 				t.Error(err)
 			}
+			gb := make([]byte, 4)
+			n, err := sw.Read(gb)
+			if n != 4 || err != nil || !bytes.Equal(gb[:], []byte{'G', 'O', 'O', 'D'}) {
+				t.Error("error reading final secure_wire good confirmation")
+			}
+			_, _ = sw.Write([]byte{'G', 'O', 'O', 'D'})
+			assertConnectionStillOpen(t)
+			cleanup()
+		})
+	}
+}
+
+func TestServer_HappyPath_forEvery_KeyType_UsingTripleAES256(t *testing.T) {
+	for keyType, name := range cu.KeyTypeAsString {
+		t.Run(fmt.Sprintf("Happy Path using %v", name), func(t *testing.T) {
+			serverSetupWithTripleAES256()
+			givenServerAndClientKeys(keyType)
+			givenPotpInConfig()
+			givenPuzzleAnswered(t)
+			givenClientHelloAnswered(t)
+			keySize, serverKey, clientKey, clientPotp := givenSharedSecretRequestReceived(t)
+			fullClientKey, _ := cliCfg.GetKeyByCN(clientKey.CN)
+			clientShare := givenSharedSecretSend(t, cSend, serverKey, clientPotp, keySize)
+			serverShare := givenSharedSecretReceive(t, cRecv, fullClientKey, clientPotp, keySize)
+			sharedKey := mixSharedSecretsForKey(serverShare, clientShare, keySize)
+
+			ofs := 0
+			oneKeySize := 32
+			oneNonceSize := 12
+			sw2, err := NewSecureWireAES256CGM(sharedKey[ofs:ofs+oneKeySize], sharedKey[ofs+oneKeySize:ofs+oneKeySize+oneNonceSize], cPipe)
+			if err != nil {
+				t.Error(err)
+			}
+			ofs += oneKeySize + oneNonceSize
+			sw1, err := NewSecureWireAES256CGM(sharedKey[ofs:ofs+oneKeySize], sharedKey[ofs+oneKeySize:ofs+oneKeySize+oneNonceSize], sw2)
+			if err != nil {
+				t.Error(err)
+			}
+			ofs += oneKeySize + oneNonceSize
+			sw, err := NewSecureWireAES256CGM(sharedKey[ofs:ofs+oneKeySize], sharedKey[ofs+oneKeySize:ofs+oneKeySize+oneNonceSize], sw1)
+			if err != nil {
+				t.Error(err)
+			}
+
 			gb := make([]byte, 4)
 			n, err := sw.Read(gb)
 			if n != 4 || err != nil || !bytes.Equal(gb[:], []byte{'G', 'O', 'O', 'D'}) {
@@ -536,21 +634,30 @@ func givenPuzzleAnswered(t *testing.T) {
 	cSend(t, &puzzleResponse)
 }
 
-func givenValidClientHello() {
+func givenValidClientHello(t *testing.T) {
 	key, _ := cliCfg.GetKeyByCN(cliCfg.PreferredKeyCN)
 	clientHello = msg.ClientHello{
 		KeyId:    key.IdAs32Byte(),
 		Protocol: msg.ClientHelloProtocol,
-		WireType: msg.ClientHelloWireTypeSimpleAES256,
+	}
+	switch cliCfg.TripleAES256 {
+	case config.TripleAES256Allowed:
+		clientHello.WireType = msg.WireTypeTripleAES256Optional
+	case config.TripleAES256Required:
+		clientHello.WireType = msg.WireTypeTripleAES256
+	case config.TripleAES256Disabled:
+		clientHello.WireType = msg.WireTypeSimpleAES256
+	default:
+		t.Error("client config TripleAES256 entry unknown, please implement.")
 	}
 }
 
 func givenClientHelloAnswered(t *testing.T) {
-	givenValidClientHello()
+	givenValidClientHello(t)
 	cSend(t, clientHello)
 }
 
-func givenSharedSecretRequestReceived(t *testing.T) (serverKey *config.Key, clientKey *config.Key, clientPotp *config.Potp) {
+func givenSharedSecretRequestReceived(t *testing.T) (keySize int, serverKey *config.Key, clientKey *config.Key, clientPotp *config.Potp) {
 	cRecv(t, &sharedSecretRequest)
 	if sharedSecretRequest.RequestType != msg.SharedSecretRequestTypeKEMAndPotp {
 		t.Error("sharedSecretRequest.RequestType should be 0, as so far the only version implemented")
@@ -561,7 +668,11 @@ func givenSharedSecretRequestReceived(t *testing.T) (serverKey *config.Key, clie
 	}
 	clientKey, _ = srvCfg.GetKeyByCN(cliCfg.PreferredKeyCN) // XXX: CROSS CHECK  THIS
 	clientPotp, _ = srvCfg.GetPotpByCN(cliCfg.PreferredPotpCN)
-	return serverKey, clientKey, clientPotp
+	keySize = 256/8 + 96/8
+	if sharedSecretRequest.WireType == msg.WireTypeTripleAES256 {
+		keySize *= 3
+	}
+	return
 }
 
 func sendNoise(conn net.Conn, minimumAmount int) int {
@@ -597,8 +708,8 @@ func ServerSendsNoise(minimumAmount int) int {
 	return sendNoise(sPipe, minimumAmount)
 }
 
-func givenSharedSecretSend(t *testing.T, send func(t *testing.T, msg interface{}), receiverKey *config.Key, potp *config.Potp) *msg.SharedSecret {
-	keySize, clientSecretsCount := calculateKeySizeKemsCountAndKem(receiverKey)
+func givenSharedSecretSend(t *testing.T, send func(t *testing.T, msg interface{}), receiverKey *config.Key, potp *config.Potp, keySize int) *msg.SharedSecret {
+	clientSecretsCount := calculateKemsCount(receiverKey, keySize)
 	potpBytes, otpOffset := potp.PickOTP(keySize)
 
 	sharedSecretBundleDescResponse = msg.SharedSecretBundleDescriptionResponse{
@@ -738,15 +849,11 @@ func sRecv(t *testing.T, msg interface{}) {
 	}
 }
 
-func calculateKeySizeKemsCountAndKem(clientKey *config.Key) (keySize int, secretsCount int) {
-	keySize = (256 / 8) + (96 / 8)
-	if clientHello.WireType == msg.ClientHelloWireTypeTripleAES256 {
-		keySize = keySize * 3
-	}
+func calculateKemsCount(clientKey *config.Key, keySize int) (secretsCount int) {
 	sharedSecretBytes := cu.CipherTextSizeByKeyType[clientKey.GetKeyType()].SharedSecret
 	secretsCount = keySize / sharedSecretBytes
 	if (keySize % sharedSecretBytes) != 0 {
 		secretsCount += 1
 	}
-	return keySize, secretsCount
+	return secretsCount
 }

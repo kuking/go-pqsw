@@ -75,6 +75,10 @@ func (s *SecureWire) Read(b []byte) (n int, err error) {
 	if err != nil {
 		return n, errors.Wrap(err, "secure_wire: read: failed to read payload")
 	}
+	if payloadSize.asInt() > len(s.readBuffer) {
+		_ = s.Close()
+		return 0, errors.Errorf("secure_wire: read: payload size too big, length: %v", payloadSize.asInt())
+	}
 	n, err = io.ReadFull(s.underlying, s.readBuffer[0:payloadSize.asInt()])
 	if err != nil || n != int(payloadSize.Size) {
 		return 0, errors.Wrapf(err, "secure_wire: read: failed to read %v bytes of payload", payloadSize.asInt())

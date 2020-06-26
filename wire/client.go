@@ -23,11 +23,11 @@ func ClientHandshake(conn net.Conn, cfg *config.Config) (wire *SecureWire, err e
 	if terminateHandshakeOnError(conn, err, "retrieving client key from configuration") {
 		return
 	}
-	symmetricKeySize, err := sendHello(conn, clientKey)
+	err = sendHello(conn, cfg, clientKey)
 	if terminateHandshakeOnError(conn, err, "sending client hello") {
 		return
 	}
-	shareSecretReq, err := readSharedSecretRequest(conn, cfg)
+	shareSecretReq, symmetricKeySize, err := readSharedSecretRequest(conn, cfg)
 	if terminateHandshakeOnError(conn, err, "receiving server share secret request") {
 		return
 	}
@@ -51,7 +51,7 @@ func ClientHandshake(conn net.Conn, cfg *config.Config) (wire *SecureWire, err e
 	}
 	keysBytes := mixSharedSecretsForKey(serverShare, clientShare, symmetricKeySize)
 	fmt.Println("Client session key (debug, disable in prod):", cryptoutil.EncB64(keysBytes))
-	wire, err = NewSecureWireAES256CGM(keysBytes[0:32], keysBytes[32:32+12], conn)
+	wire, err = BuildSecureWire(keysBytes, conn)
 	if terminateHandshakeOnError(conn, err, "establishing secure_wire") {
 		return
 	}
@@ -78,33 +78,48 @@ func clientHandshakeOverSecureWire(sw *SecureWire) error {
 	return err
 }
 
-func readSharedSecretRequest(conn net.Conn, cfg *config.Config) (req *msg.SharedSecretRequest, err error) {
+func readSharedSecretRequest(conn net.Conn, cfg *config.Config) (req *msg.SharedSecretRequest, symmetricKeySize int, err error) {
 	req = &msg.SharedSecretRequest{}
 	err = binary.Read(conn, binary.LittleEndian, req)
 	if err != nil {
-		return nil, err
+		return
 	}
 	if req.RequestType != msg.SharedSecretRequestTypeKEMAndPotp {
-		return nil, errors.Errorf("unknown shared request type provided=%v", req.RequestType)
+		err = errors.Errorf("unknown shared request type provided=%v", req.RequestType)
+		return
 	}
 	_, err = cfg.GetKeyByID(req.KeyIdPreferredAsString())
 	if err != nil {
-		return nil, errors.Wrap(err, "key requested by server in server share request unknown")
+		err = errors.Wrap(err, "key requested by server in server share request unknown")
+		return
 	}
-	return req, nil
+	if req.WireType == msg.WireTypeSimpleAES256 && cfg.TripleAES256 == config.TripleAES256Required {
+		err = errors.New("server insist on SimpleAES256 when we required TripleAES256.")
+		return
+	}
+	if req.WireType == msg.WireTypeTripleAES256 && cfg.TripleAES256 == config.TripleAES256Disabled {
+		err = errors.New("server insist on TripleAES256 when we required SingleAES256 and it is disabled by config, so we can not proceed.")
+		return
+	}
+	symmetricKeySize = 256/8 + 96/8
+	if req.WireType == msg.WireTypeTripleAES256 {
+		symmetricKeySize *= 3
+	}
+	return
 }
 
-func sendHello(conn net.Conn, clientKey *config.Key) (symmetricKeySize int, err error) {
+func sendHello(conn net.Conn, cfg *config.Config, clientKey *config.Key) (err error) {
 	clientHello := msg.ClientHello{
 		Protocol: msg.ClientHelloProtocol,
-		WireType: msg.ClientHelloWireTypeSimpleAES256,
 		KeyId:    clientKey.IdAs32Byte(),
+		WireType: msg.WireTypeSimpleAES256,
 	}
-	symmetricKeySize = (256 / 8) + (96 / 8)
-	if clientHello.WireType == msg.ClientHelloWireTypeTripleAES256 {
-		symmetricKeySize = symmetricKeySize * 3
+	if cfg.TripleAES256 == config.TripleAES256Required {
+		clientHello.WireType = msg.WireTypeTripleAES256
+	} else if cfg.TripleAES256 == config.TripleAES256Allowed {
+		clientHello.WireType = msg.WireTypeTripleAES256Optional
 	}
-	return symmetricKeySize, binary.Write(conn, binary.LittleEndian, &clientHello)
+	return binary.Write(conn, binary.LittleEndian, &clientHello)
 }
 
 func answerPuzzle(conn net.Conn) (err error) {

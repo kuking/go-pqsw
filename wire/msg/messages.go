@@ -12,10 +12,11 @@ const (
 	DisconnectCauseNone                           uint32 = 0
 	DisconnectCauseProtocolRequestedNotSupported  uint32 = 1
 	DisconnectCauseNotEnoughSecurityRequested     uint32 = 2
-	DisconnectCauseCounterpartyKeyIdNotRecognised uint32 = 3
-	DisconnectCausePotpNotRecognised              uint32 = 4
-	DisconnectCausePuzzleNotSolved                uint32 = 5
-	DisconnectCauseSeverMisconfiguration          uint32 = 6
+	DisconnectCauseTooMuchSecurityRequested       uint32 = 3
+	DisconnectCauseCounterpartyKeyIdNotRecognised uint32 = 4
+	DisconnectCausePotpNotRecognised              uint32 = 5
+	DisconnectCausePuzzleNotSolved                uint32 = 6
+	DisconnectCauseSeverMisconfiguration          uint32 = 7
 
 	SharedSecretRequestTypeKEMAndPotp uint8 = 0
 )
@@ -32,9 +33,15 @@ var DisconnectCauseString = map[uint32]string{
 
 var SecureWireGoodState = []byte{'G', 'O', 'O', 'D'}
 
+type WireType uint32
+
+const WireTypeSimpleAES256 WireType = 1
+const WireTypeTripleAES256 WireType = 2
+const WireTypeTripleAES256Optional WireType = 3
+
 type ClientHello struct {
 	Protocol uint32
-	WireType uint32
+	WireType WireType
 	KeyId    [256 / 8]byte
 }
 
@@ -43,8 +50,6 @@ func (k *ClientHello) KeyIdAsString() string {
 }
 
 const ClientHelloProtocol = 1
-const ClientHelloWireTypeSimpleAES256 = 1
-const ClientHelloWireTypeTripleAES256 = 2
 
 type PuzzleRequest struct {
 	Puzzle uint16
@@ -61,6 +66,7 @@ type PuzzleResponse struct {
 type SharedSecretRequest struct {
 	RequestType uint8 // fix=0, fix proposal of keys and Potps, open to make an unbounded list in the future
 	KeyId       [256 / 8]byte
+	WireType    WireType
 }
 
 func (s *SharedSecretRequest) KeyIdPreferredAsString() string {

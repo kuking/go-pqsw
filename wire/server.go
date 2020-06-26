@@ -61,9 +61,9 @@ func ServerHandshake(conn net.Conn, cfg *config.Config) (wire *SecureWire, err e
 		err = serr.err
 		return
 	}
-	keySize := calculateSymmetricKeySize(clientHello)
+	keySize := calculateSymmetricKeySize(clientHello, cfg)
 	keysBytes := mixSharedSecretsForKey(srvShare, cliShare, keySize)
-	wire, err = NewSecureWireAES256CGM(keysBytes[0:32], keysBytes[32:32+12], conn)
+	wire, err = BuildSecureWire(keysBytes, conn)
 	if terminateHandshakeOnError(conn, err, "establishing secure wire") {
 		return
 	}
@@ -106,15 +106,20 @@ func receiveAndVerifyClientHello(conn net.Conn, cfg *config.Config) (*msg.Client
 			errors.Errorf("protocol version not supported: %v", clientHello.Protocol),
 			msg.DisconnectCauseProtocolRequestedNotSupported)
 	}
-	if clientHello.WireType != msg.ClientHelloWireTypeSimpleAES256 && clientHello.WireType != msg.ClientHelloWireTypeTripleAES256 {
+	if clientHello.WireType != msg.WireTypeSimpleAES256 && clientHello.WireType != msg.WireTypeTripleAES256 && clientHello.WireType != msg.WireTypeTripleAES256Optional {
 		return nil, Disconnect(
 			errors.Errorf("wire type requested not supported: %v", clientHello.WireType),
 			msg.DisconnectCauseProtocolRequestedNotSupported)
 	}
-	if cfg.RequireTripleAES256 && clientHello.WireType != msg.ClientHelloWireTypeTripleAES256 {
+	if cfg.TripleAES256 == config.TripleAES256Required && clientHello.WireType == msg.WireTypeSimpleAES256 {
 		return nil, Disconnect(
 			errors.Errorf("not enough security requested"),
 			msg.DisconnectCauseNotEnoughSecurityRequested)
+	}
+	if cfg.TripleAES256 == config.TripleAES256Disabled && clientHello.WireType == msg.WireTypeTripleAES256 {
+		return nil, Disconnect(
+			errors.Errorf("too much security requested"),
+			msg.DisconnectCauseTooMuchSecurityRequested)
 	}
 	if !cfg.ContainsKeyById(clientHello.KeyIdAsString()) {
 		return nil, Disconnect(
@@ -153,7 +158,7 @@ func negotiateSharedSecrets(conn net.Conn, cfg *config.Config, clientHello *msg.
 	serverShare *msg.SharedSecret,
 	serr *ServerError) {
 
-	symmetricKeySize := calculateSymmetricKeySize(clientHello)
+	symmetricKeySize := calculateSymmetricKeySize(clientHello, cfg)
 
 	serverKey, err := cfg.GetKeyByCN(cfg.PreferredKeyCN)
 	if err != nil {
@@ -172,9 +177,14 @@ func negotiateSharedSecrets(conn net.Conn, cfg *config.Config, clientHello *msg.
 			Disconnect(errors.Wrap(err, "serverPotp specified by configuration not found"), msg.DisconnectCauseSeverMisconfiguration)
 	}
 
+	wireType, serr := deriveWireType(clientHello.WireType, cfg.TripleAES256)
+	if serr != nil {
+		return
+	}
 	shrSecretReq := msg.SharedSecretRequest{
 		RequestType: 0,
 		KeyId:       serverKey.IdAs32Byte(),
+		WireType:    wireType,
 	}
 	err = binary.Write(conn, binary.LittleEndian, shrSecretReq)
 	if err != nil {
@@ -183,15 +193,34 @@ func negotiateSharedSecrets(conn net.Conn, cfg *config.Config, clientHello *msg.
 
 	clientShare, serr = readSharedSecret(conn, serverKey, cfg, symmetricKeySize)
 	if serr != nil {
-		return clientShare, serverShare, serr
+		return
 	}
 
 	serverShare, serr = sendSharedSecret(conn, clientKey, serverPotp, symmetricKeySize)
-	if serr != nil {
-		return clientShare, serverShare, serr
-	}
+	return
+}
 
-	return clientShare, serverShare, nil
+func deriveWireType(clientWireType msg.WireType, serverTripleAES256cfg config.TripleAES256Config) (wt msg.WireType, serr *ServerError) {
+	if serverTripleAES256cfg == config.TripleAES256Allowed {
+		if clientWireType == msg.WireTypeTripleAES256 || clientWireType == msg.WireTypeTripleAES256Optional {
+			wt = msg.WireTypeTripleAES256
+		} else {
+			wt = msg.WireTypeSimpleAES256
+		}
+	} else if serverTripleAES256cfg == config.TripleAES256Required {
+		if clientWireType == msg.WireTypeTripleAES256 || clientWireType == msg.WireTypeTripleAES256Optional {
+			wt = msg.WireTypeTripleAES256
+		} else {
+			serr = Disconnect(errors.New("Not enough security"), msg.DisconnectCauseNotEnoughSecurityRequested)
+		}
+	} else if serverTripleAES256cfg == config.TripleAES256Disabled {
+		if clientWireType == msg.WireTypeTripleAES256 {
+			serr = Disconnect(errors.New("Client asking for too much security"), msg.DisconnectCauseTooMuchSecurityRequested)
+		} else {
+			wt = msg.WireTypeSimpleAES256
+		}
+	}
+	return
 }
 
 func sendSharedSecret(conn net.Conn, receiver *config.Key, potp *config.Potp, symmetricKeySize int) (res *msg.SharedSecret, serr *ServerError) {
@@ -311,18 +340,24 @@ func terminateHandshakeOnServerError(conn net.Conn, serr *ServerError, explanati
 
 // ------------------------------------------------------------------------------------------------------------------
 
-func mixSharedSecretsForKey(serverShare *msg.SharedSecret, clientShare *msg.SharedSecret, keySize int) (res []byte) {
+func mixSharedSecretsForKey(serverShare *msg.SharedSecret, clientShare *msg.SharedSecret, keySize int) (key []byte) {
 	allBytes := cryptoutil.ConcatAll(serverShare.SharesJoined(), clientShare.SharesJoined(), serverShare.Otp, clientShare.Otp)
-	res = make([]byte, keySize)
+	key = make([]byte, keySize)
 	for i := 0; i < len(allBytes); i++ {
-		res[i%keySize] = res[i%keySize] ^ allBytes[i]
+		key[i%keySize] = key[i%keySize] ^ allBytes[i]
 	}
-	return res
+	return
 }
 
-func calculateSymmetricKeySize(clientHello *msg.ClientHello) int {
+func calculateSymmetricKeySize(clientHello *msg.ClientHello, serverConfig *config.Config) int {
+	// at this stage, if the combination of server config/client hello can not be invalid i.e. server requires
+	// TripleAES256 but client asks for SimpleAES256, client would have been disconnected during: receiveAndVerifyClientHello
 	keySize := (256 / 8) + (96 / 8)
-	if clientHello.WireType == msg.ClientHelloWireTypeTripleAES256 {
+
+	if clientHello.WireType == msg.WireTypeTripleAES256 {
+		keySize = keySize * 3
+	} else if clientHello.WireType == msg.WireTypeTripleAES256Optional &&
+		(serverConfig.TripleAES256 == config.TripleAES256Allowed || serverConfig.TripleAES256 == config.TripleAES256Required) {
 		keySize = keySize * 3
 	}
 	return keySize

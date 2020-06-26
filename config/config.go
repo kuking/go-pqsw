@@ -26,14 +26,22 @@ type Potp struct {
 	Body string
 }
 
+type TripleAES256Config string
+
+const (
+	TripleAES256Required TripleAES256Config = "required"
+	TripleAES256Allowed  TripleAES256Config = "allowed"
+	TripleAES256Disabled TripleAES256Config = "disabled"
+)
+
 type Config struct {
-	Keys                []Key
-	Potps               []Potp
-	PreferredKeyCN      string
-	PreferredPotpCN     string
-	PuzzleDifficulty    int
-	RequireTripleAES256 bool
-	passwordInDisk      string
+	Keys             []Key
+	Potps            []Potp
+	PreferredKeyCN   string
+	PreferredPotpCN  string
+	PuzzleDifficulty int
+	TripleAES256     TripleAES256Config
+	passwordInDisk   string
 }
 
 func (k *Key) IdAs32Byte() [32]byte {
@@ -298,11 +306,11 @@ func (c *Config) CreateAndAddInPlacePotp(size int, cn string) (*Potp, error) {
 
 func NewEmpty() *Config {
 	return &Config{
-		Keys:                make([]Key, 0),
-		Potps:               make([]Potp, 0),
-		PreferredKeyCN:      "",
-		PreferredPotpCN:     "",
-		PuzzleDifficulty:    18, // as 2020, roughly 150-250ms on Ryzen 3800X using vanilla impl
-		RequireTripleAES256: false,
+		Keys:             make([]Key, 0),
+		Potps:            make([]Potp, 0),
+		PreferredKeyCN:   "",
+		PreferredPotpCN:  "",
+		PuzzleDifficulty: 18, // as 2020, roughly 150-250ms on Ryzen 3800X using vanilla impl
+		TripleAES256:     TripleAES256Allowed,
 	}
 }

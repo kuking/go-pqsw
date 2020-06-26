@@ -36,5 +36,4 @@ your feedback is welcomed. Absolutely no warranty of any kind, form or type is g
 - Increment puzzle difficulty on auth failure
 - Demo golang program
 - Kill signal to reload config
-- Triple AES256
 - Potps offset can be any uint64, then it is % its size, to hide its real size.
