@@ -56,18 +56,18 @@ func ServerHandshake(conn net.Conn, cfg *config.Config) (wire *SecureWire, err e
 		err = serr.err
 		return
 	}
-	cliShare, srvShare, serr := negotiateSharedSecrets(conn, cfg, clientHello)
+	cliShare, srvShare, serverKey, serr := negotiateSharedSecrets(conn, cfg, clientHello)
 	if terminateHandshakeOnServerError(conn, serr, "negotiating shared secrets") {
 		err = serr.err
 		return
 	}
 	keySize := calculateSymmetricKeySize(clientHello, cfg)
 	keysBytes := mixSharedSecretsForKey(srvShare, cliShare, keySize)
-	wire, err = BuildSecureWire(keysBytes, conn)
+	wire, err = BuildSecureWire(keysBytes, conn, serverKey.IdAs32Byte(), clientHello.KeyId)
 	if terminateHandshakeOnError(conn, err, "establishing secure wire") {
 		return
 	}
-	fmt.Println("Server session key (debug, disable in prod):", cryptoutil.EncB64(keysBytes))
+	//fmt.Println("Server session key (debug, disable in prod):", cryptoutil.EncB64(keysBytes))
 	serr = handshakeOverSecureWire(wire)
 	if terminateHandshakeOnServerError(conn, serr, "while handshaking over secure_wire") {
 		err = serr.err
@@ -156,24 +156,25 @@ func challengeWithPuzzle(conn net.Conn, cfg *config.Config) (*msg.PuzzleRequest,
 func negotiateSharedSecrets(conn net.Conn, cfg *config.Config, clientHello *msg.ClientHello) (
 	clientShare *msg.SharedSecret,
 	serverShare *msg.SharedSecret,
+	serverKey *config.Key,
 	serr *ServerError) {
 
 	symmetricKeySize := calculateSymmetricKeySize(clientHello, cfg)
 
 	serverKey, err := cfg.GetKeyByCN(cfg.PreferredKeyCN)
 	if err != nil {
-		return clientShare, serverShare,
+		return clientShare, serverShare, serverKey,
 			Disconnect(errors.Wrap(err, "serverKey specified by configuration not found"), msg.DisconnectCauseSeverMisconfiguration)
 	}
 	clientKey, err := cfg.GetKeyByID(clientHello.KeyIdAsString())
 	if err != nil {
 		// this should never happen has it has been verified by receiveAndVerifyClientHello()
-		return clientShare, serverShare,
+		return clientShare, serverShare, serverKey,
 			Disconnect(errors.Wrap(err, "clientKey specified not found"), msg.DisconnectCauseCounterpartyKeyIdNotRecognised)
 	}
 	serverPotp, err := cfg.GetPotpByCN(cfg.PreferredPotpCN)
 	if err != nil {
-		return clientShare, serverShare,
+		return clientShare, serverShare, serverKey,
 			Disconnect(errors.Wrap(err, "serverPotp specified by configuration not found"), msg.DisconnectCauseSeverMisconfiguration)
 	}
 
@@ -188,7 +189,7 @@ func negotiateSharedSecrets(conn net.Conn, cfg *config.Config, clientHello *msg.
 	}
 	err = binary.Write(conn, binary.LittleEndian, shrSecretReq)
 	if err != nil {
-		return clientShare, serverShare, Disconnect(err, msg.DisconnectCauseNone)
+		return clientShare, serverShare, serverKey, Disconnect(err, msg.DisconnectCauseNone)
 	}
 
 	clientShare, serr = readSharedSecret(conn, serverKey, cfg, symmetricKeySize)

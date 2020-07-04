@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"github.com/kuking/go-pqsw/config"
-	"github.com/kuking/go-pqsw/cryptoutil"
 	"github.com/kuking/go-pqsw/wire/msg"
 	"github.com/kuking/go-pqsw/wire/sha512lz"
 	"github.com/pkg/errors"
@@ -50,8 +49,8 @@ func ClientHandshake(conn net.Conn, cfg *config.Config) (wire *SecureWire, err e
 		return
 	}
 	keysBytes := mixSharedSecretsForKey(serverShare, clientShare, symmetricKeySize)
-	fmt.Println("Client session key (debug, disable in prod):", cryptoutil.EncB64(keysBytes))
-	wire, err = BuildSecureWire(keysBytes, conn)
+	//fmt.Println("Client session key (debug, disable in prod):", cryptoutil.EncB64(keysBytes))
+	wire, err = BuildSecureWire(keysBytes, conn, clientKey.IdAs32Byte(), serverKey.IdAs32Byte())
 	if terminateHandshakeOnError(conn, err, "establishing secure_wire") {
 		return
 	}

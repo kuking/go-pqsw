@@ -28,9 +28,11 @@ type SecureWire struct {
 	writeBuffer []byte
 	sendSeqNo   uint32
 	recvSeqNo   uint32
+	localKeyId  [32]byte
+	remoteKeyId [32]byte
 }
 
-func NewSecureWireAES256CGM(key []byte, nonce []byte, conn net.Conn) (sw *SecureWire, err error) {
+func NewSecureWireAES256CGM(key []byte, nonce []byte, conn net.Conn, localKeyId, remoteKeyId [32]byte) (sw *SecureWire, err error) {
 	if len(key) != 32 {
 		return nil, errors.Errorf("key must be 256 bits (32 bytes), but provided %v bytes.", len(key))
 	}
@@ -53,6 +55,8 @@ func NewSecureWireAES256CGM(key []byte, nonce []byte, conn net.Conn) (sw *Secure
 		writeBuffer: make([]byte, NetworkBufferSize),
 		sendSeqNo:   0,
 		recvSeqNo:   0,
+		localKeyId:  localKeyId,
+		remoteKeyId: remoteKeyId,
 	}, nil
 }
 
@@ -132,4 +136,12 @@ func (s *SecureWire) SetReadDeadline(t time.Time) error {
 
 func (s *SecureWire) SetWriteDeadline(t time.Time) error {
 	return s.underlying.SetWriteDeadline(t)
+}
+
+func (s *SecureWire) LocalKeyId() [32]byte {
+	return s.localKeyId
+}
+
+func (s *SecureWire) RemoteKeyId() [32]byte {
+	return s.remoteKeyId
 }

@@ -189,7 +189,7 @@ func TestClient_ShareSecretsExchange(t *testing.T) {
 
 	givenClientSolvesPuzzle(t)
 	clientKey, keySize := givenClientHello(t)
-	givenServerShareRequest(t)
+	serverKey := givenServerShareRequest(t)
 	potp, err := cliCfg.GetPotpByCN(cliCfg.PreferredPotpCN)
 	if err != nil {
 		t.Errorf("could not retrieve potp, err=%v", err)
@@ -199,7 +199,7 @@ func TestClient_ShareSecretsExchange(t *testing.T) {
 	serverShare := givenSharedSecretSend(t, sSend, clientKey, potp, keySize)
 	keysBytes := mixSharedSecretsForKey(serverShare, clientShare, keySize)
 
-	_, err = NewSecureWireAES256CGM(keysBytes[0:32], keysBytes[32:32+12], sPipe)
+	_, err = NewSecureWireAES256CGM(keysBytes[0:32], keysBytes[32:32+12], sPipe, clientKey.IdAs32Byte(), serverKey.IdAs32Byte())
 	if err != nil {
 		t.Error(err)
 	}
@@ -211,7 +211,7 @@ func TestClient_SecureWireHandshakeIssues(t *testing.T) {
 
 	givenClientSolvesPuzzle(t)
 	clientKey, keySize := givenClientHello(t)
-	givenServerShareRequest(t)
+	serverKey := givenServerShareRequest(t)
 	potp, err := cliCfg.GetPotpByCN(cliCfg.PreferredPotpCN)
 	if err != nil {
 		t.Errorf("could not retrieve potp, err=%v", err)
@@ -221,7 +221,7 @@ func TestClient_SecureWireHandshakeIssues(t *testing.T) {
 	serverShare := givenSharedSecretSend(t, sSend, clientKey, potp, keySize)
 	keysBytes := mixSharedSecretsForKey(serverShare, clientShare, keySize)
 
-	sw, err := NewSecureWireAES256CGM(keysBytes[0:32], keysBytes[32:32+12], sPipe)
+	sw, err := NewSecureWireAES256CGM(keysBytes[0:32], keysBytes[32:32+12], sPipe, clientKey.IdAs32Byte(), serverKey.IdAs32Byte())
 	if err != nil {
 		t.Error(err)
 	}
@@ -248,7 +248,7 @@ func TestClient_HappyPath(t *testing.T) {
 	serverShare := givenSharedSecretSend(t, sSend, clientKey, potp, keySize)
 	keysBytes := mixSharedSecretsForKey(serverShare, clientShare, keySize)
 
-	sw, err := NewSecureWireAES256CGM(keysBytes[0:32], keysBytes[32:32+12], sPipe)
+	sw, err := NewSecureWireAES256CGM(keysBytes[0:32], keysBytes[32:32+12], sPipe, clientKey.IdAs32Byte(), serverKey.IdAs32Byte())
 	if err != nil {
 		t.Error(err)
 	}
@@ -284,17 +284,17 @@ func TestClient_HappyPath_TripleAES256(t *testing.T) {
 	ofs := 0
 	oneKeySize := 32
 	oneNonceSize := 12
-	sw2, err := NewSecureWireAES256CGM(keysBytes[ofs:ofs+oneKeySize], keysBytes[ofs+oneKeySize:ofs+oneKeySize+oneNonceSize], sPipe)
+	sw2, err := NewSecureWireAES256CGM(keysBytes[ofs:ofs+oneKeySize], keysBytes[ofs+oneKeySize:ofs+oneKeySize+oneNonceSize], sPipe, clientKey.IdAs32Byte(), serverKey.IdAs32Byte())
 	if err != nil {
 		t.Error(err)
 	}
 	ofs += oneKeySize + oneNonceSize
-	sw1, err := NewSecureWireAES256CGM(keysBytes[ofs:ofs+oneKeySize], keysBytes[ofs+oneKeySize:ofs+oneKeySize+oneNonceSize], sw2)
+	sw1, err := NewSecureWireAES256CGM(keysBytes[ofs:ofs+oneKeySize], keysBytes[ofs+oneKeySize:ofs+oneKeySize+oneNonceSize], sw2, clientKey.IdAs32Byte(), serverKey.IdAs32Byte())
 	if err != nil {
 		t.Error(err)
 	}
 	ofs += oneKeySize + oneNonceSize
-	sw, err := NewSecureWireAES256CGM(keysBytes[ofs:ofs+oneKeySize], keysBytes[ofs+oneKeySize:ofs+oneKeySize+oneNonceSize], sw1)
+	sw, err := NewSecureWireAES256CGM(keysBytes[ofs:ofs+oneKeySize], keysBytes[ofs+oneKeySize:ofs+oneKeySize+oneNonceSize], sw1, clientKey.IdAs32Byte(), serverKey.IdAs32Byte())
 	if err != nil {
 		t.Error(err)
 	}
