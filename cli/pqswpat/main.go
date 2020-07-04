@@ -5,8 +5,10 @@ import (
 	"flag"
 	"fmt"
 	"github.com/kuking/go-pqsw/config"
+	"github.com/kuking/go-pqsw/cryptoutil"
 	"github.com/kuking/go-pqsw/wire"
 	"io"
+	"math/rand"
 	"net"
 	"os"
 	"regexp"
@@ -70,8 +72,10 @@ further forwarded to the server and be broadcasted to all clients (including its
 	return true
 }
 
+// ---------- server code ---------------------------------------------------------------------------------------------
+
 type ClientConnection struct {
-	Name           string
+	Id             uint64
 	Wire           *wire.SecureWire
 	ServerToClient chan string
 }
@@ -79,6 +83,7 @@ type ClientConnection struct {
 var ClientConnectionsLock sync.RWMutex
 var ClientConnections = make([]ClientConnection, 0)
 var ClientToServer = make(chan string, 100)
+var ClientToServerDisconnect = make(chan uint64, 100)
 
 func handleServerConnection(conn net.Conn, cfg *config.Config) {
 	var err error
@@ -89,7 +94,7 @@ func handleServerConnection(conn net.Conn, cfg *config.Config) {
 	}
 	conn.RemoteAddr().String()
 	clientConnection := ClientConnection{
-		Name:           conn.RemoteAddr().String(),
+		Id:             rand.Uint64(),
 		Wire:           sw,
 		ServerToClient: make(chan string, 10),
 	}
@@ -97,29 +102,45 @@ func handleServerConnection(conn net.Conn, cfg *config.Config) {
 	ClientConnections = append(ClientConnections, clientConnection)
 	ClientConnectionsLock.Unlock()
 
-	go handleClientInServer(clientConnection)
+	go handleClientWithinServer(clientConnection)
 }
 
-func handleClientInServer(conn ClientConnection) {
-	wireChan := make(chan string)
+func handleClientWithinServer(conn ClientConnection) {
+	remoteKeyId := conn.Wire.RemoteKeyId()
+	localKeyId := conn.Wire.LocalKeyId()
+	fmt.Printf("%x: %v connected using client key %v and server key %v\n",
+		conn.Id, conn.Wire.RemoteAddr(), cryptoutil.EncB64(remoteKeyId[:]), cryptoutil.EncB64(localKeyId[:]))
+	wireChan := make(chan *string)
 	scanner := bufio.NewScanner(conn.Wire)
 	go scannerToChan(scanner, wireChan)
 	for {
 		select {
 		case msg := <-conn.ServerToClient:
-			conn.Wire.Write(append([]byte(msg), '\n'))
+			_, err := conn.Wire.Write(append([]byte(msg), '\n'))
+			if err != nil {
+				fmt.Printf("%x: can not write to client\n", conn.Id)
+				ClientToServerDisconnect <- conn.Id
+				return
+			}
 		case msg := <-wireChan:
-			fmt.Println(conn.Name, "->", msg)
-			ClientToServer <- msg
+			if msg == nil {
+				fmt.Printf("%x: remote disconnect\n", conn.Id)
+				ClientToServerDisconnect <- conn.Id
+				return
+			} else {
+				fmt.Printf("%x:> %v\n", conn.Id, *msg)
+				ClientToServer <- *msg
+			}
 		}
-		fmt.Println("handleClientInServer loop")
 	}
 }
 
-func scannerToChan(scanner *bufio.Scanner, wireChan chan string) {
+func scannerToChan(scanner *bufio.Scanner, wireChan chan *string) {
 	for scanner.Scan() {
-		wireChan <- scanner.Text()
+		var line = scanner.Text()
+		wireChan <- &line
 	}
+	wireChan <- nil
 	close(wireChan)
 }
 
@@ -131,6 +152,21 @@ func serverBroadcaster() {
 			for _, clientConn := range ClientConnections {
 				clientConn.ServerToClient <- msg
 			}
+			ClientConnectionsLock.Unlock()
+
+		case id := <-ClientToServerDisconnect:
+			ClientConnectionsLock.Lock()
+			for i := 0; i < len(ClientConnections); i++ {
+				if id == ClientConnections[i].Id {
+					err := ClientConnections[i].Wire.Close()
+					if err != nil {
+						fmt.Printf("%x: could not close secure wire, error=%v\n", id, err)
+					}
+					ClientConnections = append(ClientConnections[:i], ClientConnections[i+1:]...)
+					break
+				}
+			}
+			fmt.Printf("%x: disposed\n", id)
 			ClientConnectionsLock.Unlock()
 		}
 	}
@@ -145,7 +181,6 @@ func doServer(cfg *config.Config) {
 	fmt.Printf("Listening %v ...\n", ln.Addr())
 	for {
 		conn, err := ln.Accept()
-		fmt.Printf("New connection from %v ...\n", conn.RemoteAddr())
 		if err != nil {
 			fmt.Println("Error accepting connection", err)
 		} else {
@@ -153,6 +188,8 @@ func doServer(cfg *config.Config) {
 		}
 	}
 }
+
+// ---------- client code ---------------------------------------------------------------------------------------------
 
 func doClient(cfg *config.Config) {
 	fmt.Printf("Connecting to %v ...\n", hostPort)
@@ -164,18 +201,17 @@ func doClient(cfg *config.Config) {
 	if err != nil {
 		panic(err)
 	}
-	go lineCopier("client' stdin->wire", os.Stdin, sw)
-	lineCopier("client' wire->stdout", sw, os.Stdout)
+	go lineCopier(os.Stdin, sw)
+	lineCopier(sw, os.Stdout)
 }
 
-func lineCopier(desc string, r io.ReadCloser, w io.WriteCloser) {
+func lineCopier(r io.ReadCloser, w io.WriteCloser) {
 	defer r.Close()
 	defer w.Close()
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
 		w.Write(append(scanner.Bytes(), '\n'))
 	}
-	fmt.Println("Closing", desc)
 }
 
 func main() {
