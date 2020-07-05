@@ -192,7 +192,7 @@ func doServer(cfg *config.Config) {
 // ---------- client code ---------------------------------------------------------------------------------------------
 
 func doClient(cfg *config.Config) {
-	fmt.Printf("Connecting to %v ...\n", hostPort)
+	fmt.Printf("Connecting to %v ... ", hostPort)
 	ln, err := net.Dial("tcp", hostPort)
 	if err != nil {
 		panic(err)
@@ -201,6 +201,7 @@ func doClient(cfg *config.Config) {
 	if err != nil {
 		panic(err)
 	}
+	fmt.Printf("connected\n")
 	go lineCopier(os.Stdin, sw)
 	lineCopier(sw, os.Stdout)
 }
