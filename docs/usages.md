@@ -1,6 +1,6 @@
 # Usage examples
 
-## Tunnelling HTTPS via a Post-Quantum cryptographically secure channel
+## PQSWTUN: Tunnelling HTTPS via a Post-Quantum cryptographically secure channel
 
 ### Creating configuration files holding keys and a potp
 You will need two configurations files, `server.conf` and `client.conf`. Each one will have a full key (with a private
