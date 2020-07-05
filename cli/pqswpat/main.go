@@ -82,8 +82,8 @@ type ClientConnection struct {
 
 var ClientConnectionsLock sync.RWMutex
 var ClientConnections = make([]ClientConnection, 0)
-var ClientToServer = make(chan string, 100)
-var ClientToServerDisconnect = make(chan uint64, 100)
+var ClientToServer = make(chan string, 512)
+var ClientToServerDisconnect = make(chan uint64, 10)
 
 func handleServerConnection(conn net.Conn, cfg *config.Config) {
 	var err error
@@ -96,7 +96,7 @@ func handleServerConnection(conn net.Conn, cfg *config.Config) {
 	clientConnection := ClientConnection{
 		Id:             rand.Uint64(),
 		Wire:           sw,
-		ServerToClient: make(chan string, 10),
+		ServerToClient: make(chan string, 25),
 	}
 	ClientConnectionsLock.Lock()
 	ClientConnections = append(ClientConnections, clientConnection)
@@ -118,7 +118,7 @@ func handleClientWithinServer(conn ClientConnection) {
 		case msg := <-conn.ServerToClient:
 			_, err := conn.Wire.Write(append([]byte(msg), '\n'))
 			if err != nil {
-				fmt.Printf("%x: can not write to client\n", conn.Id)
+				fmt.Printf("%x: can not write to client: %v\n", conn.Id, err)
 				ClientToServerDisconnect <- conn.Id
 				return
 			}
