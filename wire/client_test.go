@@ -15,7 +15,7 @@ func clientSetup() {
 	setup()
 	srvCfg.TripleAES256 = config.TripleAES256Disabled
 	cliCfg.TripleAES256 = config.TripleAES256Disabled
-	givenServerAndClientKeys(cryptoutil.KeyTypeSidhFp503) //XXX FIXME test with multiple keys types
+	givenServerAndClientKeys(cryptoutil.KeyTypeKyber768) //XXX FIXME test with multiple keys types
 	givenPotpInConfig()
 	go ClientHandshake(cPipe, cliCfg)
 }
@@ -24,7 +24,7 @@ func clientSetupWithTripleAES256() {
 	setup()
 	srvCfg.TripleAES256 = config.TripleAES256Required
 	cliCfg.TripleAES256 = config.TripleAES256Required
-	givenServerAndClientKeys(cryptoutil.KeyTypeSidhFp434)
+	givenServerAndClientKeys(cryptoutil.KeyTypeKyber768)
 	givenPotpInConfig()
 	go ClientHandshake(cPipe, cliCfg)
 }

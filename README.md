@@ -19,9 +19,7 @@ message details [in the protocol document](docs/protocol.md).
 
 ### Post-Quantum Ciphers supported
 - FrodoKEM (640, 976, 1344 in both AES and Shake variants).
-- Sike (Fp434, Fp503 & Fp751)
-- Kyber (512, 768, 1024)
-
+- ML Kem, Kyber (768, 1024) Using `crypto/mlkem`
 
 ##  Author
 Eduardo E.S. Riccardi, you can contact me via [linkedin](https://uk.linkedin.com/in/kukino), or you could find my email
@@ -36,3 +34,9 @@ your feedback is welcomed. Absolutely no warranty of any kind, form or type is g
 - Increment puzzle difficulty on auth failure
 - Kill signal or file change detection to reload config
 - Potps offset can be any uint64, then it is % its size, to hide its real size.
+
+# Changelog
+- 2025/July/28: 
+  - Removed Sike (not secure anymore)
+  - Replaced Circl library for `crypto/mlkem`
+  - Incremented scrypt difficulty to current CPUs power

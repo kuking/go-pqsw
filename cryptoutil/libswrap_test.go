@@ -12,41 +12,6 @@ func TestGenKeyInvalid(t *testing.T) {
 	}
 }
 
-func TestGenKeySikeVariants(t *testing.T) {
-	pvt, pub, err := GenKey(KeyTypeSidhFp434)
-	if err != nil {
-		t.Error(err)
-	}
-	if len(pvt) != 44 {
-		t.Error("It did not return the right private key length")
-	}
-	if len(pub) != 330 {
-		t.Error("It did not return the right public key length")
-	}
-
-	pvt, pub, err = GenKey(KeyTypeSidhFp503)
-	if err != nil {
-		t.Error(err)
-	}
-	if len(pvt) != 56 {
-		t.Error("It did not return the right private key length")
-	}
-	if len(pub) != 378 {
-		t.Error("It did not return the right public key length")
-	}
-
-	pvt, pub, err = GenKey(KeyTypeSidhFp751)
-	if err != nil {
-		t.Error(err)
-	}
-	if len(pvt) != 80 {
-		t.Error("It did not return the right private key length")
-	}
-	if len(pub) != 564 {
-		t.Error("It did not return the right public key length")
-	}
-}
-
 func TestGenKeyFrodoVariants(t *testing.T) {
 	for kt, name := range KeyTypeAsString {
 		if name[0:5] == "FRODO" {

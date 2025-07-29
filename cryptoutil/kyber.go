@@ -1,69 +1,66 @@
 package cryptoutil
 
 import (
-	"crypto/rand"
-	"github.com/Yawning/kyber"
+	"crypto/mlkem"
 	"github.com/pkg/errors"
 )
 
 func kyberGenKey(keyType KeyType) (pvt []byte, pub []byte, err error) {
-	var parameterSet *kyber.ParameterSet
-	if keyType == KeyTypeKyber512 {
-		parameterSet = kyber.Kyber512
-	} else if keyType == KeyTypeKyber768 {
-		parameterSet = kyber.Kyber768
+	if keyType == KeyTypeKyber768 {
+		var dk *mlkem.DecapsulationKey768
+		dk, err = mlkem.GenerateKey768()
+		if err != nil {
+			return
+		}
+		pvt = dk.Bytes()
+		pub = dk.EncapsulationKey().Bytes()
 	} else if keyType == KeyTypeKyber1024 {
-		parameterSet = kyber.Kyber1024
+		var dk *mlkem.DecapsulationKey1024
+		dk, err = mlkem.GenerateKey1024()
+		if err != nil {
+			return
+		}
+		pvt = dk.Bytes()
+		pub = dk.EncapsulationKey().Bytes()
 	} else {
 		err = errors.Errorf("I do not know how to create a key type %d.", keyType)
-		return
-
-	}
-	kPub, kPvt, err := parameterSet.GenerateKeyPair(rand.Reader)
-	if err != nil {
-		return
-	}
-	pub = kPub.Bytes()
-	pvt = kPvt.Bytes()
-	return
-}
-
-func kyberParameters(keyType KeyType) (params *kyber.ParameterSet, err error) {
-	switch keyType {
-	case KeyTypeKyber512:
-		params = kyber.Kyber512
-	case KeyTypeKyber768:
-		params = kyber.Kyber768
-	case KeyTypeKyber1024:
-		params = kyber.Kyber1024
-	default:
-		err = errors.Errorf("I don't know how to create a Kyber keyType %v", keyType)
 	}
 	return
 }
 
 func kyberEncapsulate(pub []byte, keyType KeyType) (ct []byte, ss []byte, err error) {
-	kyberParams, err := kyberParameters(keyType)
-	if err != nil {
-		return
+
+	if keyType == KeyTypeKyber768 {
+		ek, err := mlkem.NewEncapsulationKey768(pub)
+		if err != nil {
+			return nil, nil, err
+		}
+		ss, ct = ek.Encapsulate()
+	} else if keyType == KeyTypeKyber1024 {
+		ek, err := mlkem.NewEncapsulationKey1024(pub)
+		if err != nil {
+			return nil, nil, err
+		}
+		ss, ct = ek.Encapsulate()
+	} else {
+		return nil, nil, errors.New("I do not know how to encapsulate this key type")
 	}
-	kPub, err := kyberParams.PublicKeyFromBytes(pub)
-	if err != nil {
-		return
-	}
-	ct, ss, err = kPub.KEMEncrypt(rand.Reader)
 	return
 }
 
 func kyberDencapsulate(pvt []byte, ct []byte, keyType KeyType) (ss []byte, err error) {
-	kyberParms, err := kyberParameters(keyType)
-	if err != nil {
-		return
+	if keyType == KeyTypeKyber768 {
+		dk, err := mlkem.NewDecapsulationKey768(pvt)
+		if err != nil {
+			return nil, err
+		}
+		return dk.Decapsulate(ct)
+	} else if keyType == KeyTypeKyber1024 {
+		dk, err := mlkem.NewDecapsulationKey1024(pvt)
+		if err != nil {
+			return nil, err
+		}
+		return dk.Decapsulate(ct)
 	}
-	kPvt, err := kyberParms.PrivateKeyFromBytes(pvt)
-	if err != nil {
-		return
-	}
-	ss = kPvt.KEMDecrypt(ct)
-	return
+	return nil, errors.New("I do not know how to encapsulate this key type")
 }

@@ -28,9 +28,9 @@ func TestLoadSaveRoundTrip(t *testing.T) {
 	defer removeTempFile(tmpFile)
 
 	original := NewEmpty()
-	_, err = original.CreateAndAddKey(cryptoutil.KeyTypeSidhFp503, "1")
+	_, err = original.CreateAndAddKey(cryptoutil.KeyTypeKyber768, "1")
 	fatalOnErr(t, err)
-	_, err = original.CreateAndAddKey(cryptoutil.KeyTypeSidhFp751, "2")
+	_, err = original.CreateAndAddKey(cryptoutil.KeyTypeKyber1024, "2")
 	fatalOnErr(t, err)
 	err = original.SaveTo(tmpFile.Name())
 	fatalOnErr(t, err)

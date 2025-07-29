@@ -66,7 +66,7 @@ func doCmdConfig() {
 		if len(args) == 4 && args[2] == "vanilla" {
 			filename := args[3]
 			potpSize := 1024
-			keyType := cryptoutil.KeyTypeSidhFp503
+			keyType := cryptoutil.KeyTypeKyber1024
 			cfg := config.NewEmpty()
 			key, err := cfg.CreateAndAddKey(keyType, strconv.FormatInt(cfg.NextSequentialKeyCN(), 10))
 			panicOnErr(err)
@@ -81,7 +81,7 @@ func doCmdConfig() {
 				fmt.Println("Could not create PSK.")
 			}
 			cfg.PreferredPotpCN = potp.CN
-			fmt.Printf("Vanilla config created with Fp751 key '%v' and a PSK of %v bits '%v'\n",
+			fmt.Printf("Vanilla config created with Kyber1024 key '%v' and a PSK of %v bits '%v'\n",
 				key.Uuid, potpSize*8, potp.Uuid)
 			panicOnErr(err)
 			saveConfigAndFinish(cfg, filename)

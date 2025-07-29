@@ -150,7 +150,7 @@ func TestServerClientHello_Noise(t *testing.T) {
 func TestServerClientHello_InvalidProtocolVersion(t *testing.T) {
 	serverSetup()
 	defer cleanup()
-	givenServerAndClientKeys(cu.KeyTypeSidhFp434)
+	givenServerAndClientKeys(cu.KeyTypeKyber768)
 	givenPuzzleAnswered(t)
 	givenValidClientHello(t)
 	clientHello.Protocol = 1234
@@ -161,7 +161,7 @@ func TestServerClientHello_InvalidProtocolVersion(t *testing.T) {
 func TestServerClientHello_InvalidWireType(t *testing.T) {
 	serverSetup()
 	defer cleanup()
-	givenServerAndClientKeys(cu.KeyTypeSidhFp434)
+	givenServerAndClientKeys(cu.KeyTypeKyber768)
 	givenPuzzleAnswered(t)
 	givenValidClientHello(t)
 	clientHello.WireType = 1234
@@ -190,7 +190,7 @@ func TestServerClientHello_WireType_TripleAES256_Options(t *testing.T) {
 				cliCfg.TripleAES256 = testCase[1]
 				outcome := testCase[2]
 				givenPotpInConfig()
-				givenServerAndClientKeys(cu.KeyTypeSidhFp434)
+				givenServerAndClientKeys(cu.KeyTypeKyber768)
 				givenPuzzleAnswered(t)
 				givenValidClientHello(t)
 				cSend(t, clientHello)
@@ -221,7 +221,7 @@ func TestServerClientHello_WireType_TripleAES256(t *testing.T) {
 	serverSetupWithTripleAES256()
 	defer cleanup()
 	givenPotpInConfig()
-	givenServerAndClientKeys(cu.KeyTypeSidhFp434)
+	givenServerAndClientKeys(cu.KeyTypeKyber768)
 	givenPuzzleAnswered(t)
 	givenValidClientHello(t)
 	clientHello.WireType = msg.WireTypeTripleAES256
@@ -234,7 +234,7 @@ func TestServerClientHello_ServerDisconnectsWhenTripleAES256Required(t *testing.
 	serverSetup()
 	defer cleanup()
 	srvCfg.TripleAES256 = config.TripleAES256Required
-	givenServerAndClientKeys(cu.KeyTypeSidhFp434)
+	givenServerAndClientKeys(cu.KeyTypeKyber768)
 	givenPuzzleAnswered(t)
 	givenValidClientHello(t)
 	cSend(t, clientHello)
@@ -244,7 +244,7 @@ func TestServerClientHello_ServerDisconnectsWhenTripleAES256Required(t *testing.
 func TestServerClientHello_UnrecognizedKeyId(t *testing.T) {
 	serverSetup()
 	defer cleanup()
-	givenServerAndClientKeys(cu.KeyTypeSidhFp434)
+	givenServerAndClientKeys(cu.KeyTypeKyber768)
 	givenPuzzleAnswered(t)
 	givenValidClientHello(t)
 	copy(clientHello.KeyId[5:], []byte{1, 2, 3, 4, 5, 6, 7, 8})
@@ -255,7 +255,7 @@ func TestServerClientHello_UnrecognizedKeyId(t *testing.T) {
 func TestServerClientHello_SendsAndDisconnects(t *testing.T) {
 	serverSetup()
 	defer cleanup()
-	givenServerAndClientKeys(cu.KeyTypeSidhFp434)
+	givenServerAndClientKeys(cu.KeyTypeKyber768)
 	givenPuzzleAnswered(t)
 	givenValidClientHello(t)
 	cSend(t, clientHello)
@@ -266,7 +266,7 @@ func TestServerClientHello_SendsAndDisconnects(t *testing.T) {
 func TestServerClientHello_HappyPath(t *testing.T) {
 	serverSetup()
 	defer cleanup()
-	givenServerAndClientKeys(cu.KeyTypeSidhFp434)
+	givenServerAndClientKeys(cu.KeyTypeKyber768)
 	givenPotpInConfig()
 	givenPuzzleAnswered(t)
 	givenValidClientHello(t)
@@ -278,7 +278,7 @@ func TestServerClientHello_HappyPath(t *testing.T) {
 func TestServerSharedSecretRequest_Disconnect(t *testing.T) {
 	serverSetup()
 	defer cleanup()
-	givenServerAndClientKeys(cu.KeyTypeSidhFp434)
+	givenServerAndClientKeys(cu.KeyTypeKyber768)
 	givenPotpInConfig()
 	givenPuzzleAnswered(t)
 	givenClientHelloAnswered(t)
@@ -290,7 +290,7 @@ func TestServerSharedSecretRequest_Disconnect(t *testing.T) {
 func TestServerSharedSecretRequest_EmptyResponse(t *testing.T) {
 	serverSetup()
 	defer cleanup()
-	givenServerAndClientKeys(cu.KeyTypeSidhFp434)
+	givenServerAndClientKeys(cu.KeyTypeKyber768)
 	givenPotpInConfig()
 	givenPuzzleAnswered(t)
 	givenClientHelloAnswered(t)
@@ -305,7 +305,7 @@ func TestServerSharedSecretRequest_EmptyResponse(t *testing.T) {
 func TestServerSharedSecretRequest_InvalidSecretsCount(t *testing.T) {
 	serverSetup()
 	defer cleanup()
-	givenServerAndClientKeys(cu.KeyTypeSidhFp434)
+	givenServerAndClientKeys(cu.KeyTypeKyber768)
 	givenPotpInConfig()
 	givenPuzzleAnswered(t)
 	givenClientHelloAnswered(t)
@@ -323,7 +323,7 @@ func TestServerSharedSecretRequest_InvalidSecretsCount(t *testing.T) {
 func TestServerSharedSecretRequest_InvalidPotpId(t *testing.T) {
 	serverSetup()
 	defer cleanup()
-	givenServerAndClientKeys(cu.KeyTypeSidhFp503)
+	givenServerAndClientKeys(cu.KeyTypeKyber1024)
 	givenPotpInConfig()
 	givenPuzzleAnswered(t)
 	givenClientHelloAnswered(t)
@@ -334,7 +334,7 @@ func TestServerSharedSecretRequest_InvalidPotpId(t *testing.T) {
 		PotpIdUsed:   [32]byte{},
 		PotpOffset:   123,
 		SecretsCount: uint8(kems),
-		SecretSize:   402,
+		SecretSize:   uint16(cu.CipherTextSizeByKeyType[cu.KeyTypeKyber1024].CipherText),
 	}
 	cSend(t, sharedSecretBundleDescResponse)
 	assertServerClosedConnectionWithCause(t, msg.DisconnectCausePotpNotRecognised)
@@ -343,7 +343,7 @@ func TestServerSharedSecretRequest_InvalidPotpId(t *testing.T) {
 func TestServerSharedSecretRequest_InsufficientSharedSecrets(t *testing.T) {
 	serverSetup()
 	defer cleanup()
-	givenServerAndClientKeys(cu.KeyTypeSidhFp434)
+	givenServerAndClientKeys(cu.KeyTypeKyber768)
 	givenPotpInConfig()
 	givenPuzzleAnswered(t)
 	givenClientHelloAnswered(t)
@@ -354,7 +354,7 @@ func TestServerSharedSecretRequest_InsufficientSharedSecrets(t *testing.T) {
 		PotpIdUsed:   clientPotp.IdAs32Byte(),
 		PotpOffset:   123,
 		SecretsCount: uint8(kemsCount + 1),
-		SecretSize:   uint16(cu.CipherTextSizeByKeyType[cu.KeyTypeSidhFp434].CipherText),
+		SecretSize:   uint16(cu.CipherTextSizeByKeyType[cu.KeyTypeKyber768].CipherText),
 	})
 
 	assertServerClosedConnectionWithCause(t, msg.DisconnectCauseNotEnoughSecurityRequested)
@@ -363,7 +363,7 @@ func TestServerSharedSecretRequest_InsufficientSharedSecrets(t *testing.T) {
 func TestServerSharedSecretRequest_EmptyCiphertexts(t *testing.T) {
 	serverSetup()
 	defer cleanup()
-	givenServerAndClientKeys(cu.KeyTypeSidhFp434)
+	givenServerAndClientKeys(cu.KeyTypeKyber768)
 	givenPotpInConfig()
 
 	givenPuzzleAnswered(t)
@@ -375,12 +375,12 @@ func TestServerSharedSecretRequest_EmptyCiphertexts(t *testing.T) {
 		PotpIdUsed:   clientPotp.IdAs32Byte(),
 		PotpOffset:   0,
 		SecretsCount: uint8(clientSecretsCount),
-		SecretSize:   uint16(cu.CipherTextSizeByKeyType[cu.KeyTypeSidhFp434].CipherText),
+		SecretSize:   uint16(cu.CipherTextSizeByKeyType[cu.KeyTypeKyber768].CipherText),
 	}
 	cSend(t, sharedSecretBundleDescResponse)
 
 	for secretNo := 0; secretNo < clientSecretsCount; secretNo++ {
-		ciphertext := make([]byte, cu.CipherTextSizeByKeyType[cu.KeyTypeSidhFp434].CipherText)
+		ciphertext := make([]byte, cu.CipherTextSizeByKeyType[cu.KeyTypeKyber768].CipherText)
 		cSend(t, ciphertext)
 	}
 
@@ -390,7 +390,7 @@ func TestServerSharedSecretRequest_EmptyCiphertexts(t *testing.T) {
 func TestServerShareSecretRequest_ClientSendsInvalidSizeKem(t *testing.T) {
 	serverSetup()
 	defer cleanup()
-	givenServerAndClientKeys(cu.KeyTypeSidhFp434)
+	givenServerAndClientKeys(cu.KeyTypeKyber768)
 	givenPotpInConfig()
 
 	givenPuzzleAnswered(t)
@@ -402,7 +402,7 @@ func TestServerShareSecretRequest_ClientSendsInvalidSizeKem(t *testing.T) {
 		PotpIdUsed:   clientPotp.IdAs32Byte(),
 		PotpOffset:   0,
 		SecretsCount: uint8(clientSecretsCount),
-		SecretSize:   uint16(cu.CipherTextSizeByKeyType[cu.KeyTypeSidhFp434].CipherText + 25),
+		SecretSize:   uint16(cu.CipherTextSizeByKeyType[cu.KeyTypeKyber768].CipherText + 25),
 	}
 
 	cSend(t, sharedSecretBundleDescResponse)
@@ -412,7 +412,7 @@ func TestServerShareSecretRequest_ClientSendsInvalidSizeKem(t *testing.T) {
 func TestServerShareSecretRequest_ClientSendsNoiseKemItShouldNotPanic(t *testing.T) {
 	serverSetup()
 	defer cleanup()
-	givenServerAndClientKeys(cu.KeyTypeSidhFp434)
+	givenServerAndClientKeys(cu.KeyTypeKyber768)
 	givenPotpInConfig()
 
 	givenPuzzleAnswered(t)
@@ -425,7 +425,7 @@ func TestServerShareSecretRequest_ClientSendsNoiseKemItShouldNotPanic(t *testing
 func TestServerSharedSecretRequest_ClientSendsSharedSecretServerACK(t *testing.T) {
 	serverSetup()
 	defer cleanup()
-	givenServerAndClientKeys(cu.KeyTypeSidhFp434)
+	givenServerAndClientKeys(cu.KeyTypeKyber768)
 	givenPotpInConfig()
 	givenPuzzleAnswered(t)
 	givenClientHelloAnswered(t)
@@ -438,7 +438,7 @@ func TestServerSharedSecretRequest_ClientSendsSharedSecretServerACK(t *testing.T
 func TestServerSharedSecretRequest_ClientAndServerExchangeSharedSecret(t *testing.T) {
 	serverSetup()
 	defer cleanup()
-	givenServerAndClientKeys(cu.KeyTypeSidhFp434)
+	givenServerAndClientKeys(cu.KeyTypeKyber768)
 	givenPotpInConfig()
 	givenPuzzleAnswered(t)
 	givenClientHelloAnswered(t)
@@ -466,7 +466,7 @@ func TestServerSharedSecretRequest_ClientAndServerExchangeSharedSecret(t *testin
 func TestServer_SecureWireSetup(t *testing.T) {
 	serverSetup()
 	defer cleanup()
-	givenServerAndClientKeys(cu.KeyTypeSidhFp434)
+	givenServerAndClientKeys(cu.KeyTypeKyber768)
 	givenPotpInConfig()
 	givenPuzzleAnswered(t)
 	givenClientHelloAnswered(t)
@@ -486,7 +486,7 @@ func TestServer_SecureWireSetup(t *testing.T) {
 func TestServer_SecureWriteGoodMessageInvalid(t *testing.T) {
 	serverSetup()
 	defer cleanup()
-	givenServerAndClientKeys(cu.KeyTypeSidhFp434)
+	givenServerAndClientKeys(cu.KeyTypeKyber768)
 	givenPotpInConfig()
 	givenPuzzleAnswered(t)
 	givenClientHelloAnswered(t)
@@ -511,7 +511,7 @@ func TestServer_SecureWriteGoodMessageInvalid(t *testing.T) {
 func TestServer_HappyPath(t *testing.T) {
 	serverSetup()
 	defer cleanup()
-	givenServerAndClientKeys(cu.KeyTypeSidhFp434)
+	givenServerAndClientKeys(cu.KeyTypeKyber768)
 	givenPotpInConfig()
 	givenPuzzleAnswered(t)
 	givenClientHelloAnswered(t)

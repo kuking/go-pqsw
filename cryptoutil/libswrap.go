@@ -14,9 +14,8 @@ func GenKey(keyType KeyType) (pvt []byte, pub []byte, err error) {
 	if keyName == "" {
 		keyName = "UNKNOWN"
 	}
-	if keyName[:4] == "SIKE" {
-		return sikeGenKey(keyType)
-	} else if keyName[:5] == "FRODO" {
+
+	if keyName[:5] == "FRODO" {
 		return frodoGenKey(keyType)
 	} else if keyName[:5] == "KYBER" {
 		return kyberGenKey(keyType)
@@ -28,9 +27,7 @@ func GenKey(keyType KeyType) (pvt []byte, pub []byte, err error) {
 
 func Encapsulate(pub []byte, keyType KeyType) (ct []byte, ss []byte, err error) {
 	keyName := KeyTypeAsString[keyType]
-	if keyName[:4] == "SIKE" {
-		return sikeEncapsulate(pub, keyType)
-	} else if keyName[:5] == "FRODO" {
+	if keyName[:5] == "FRODO" {
 		return frodoEncapsulate(pub, keyType)
 	} else if keyName[:5] == "KYBER" {
 		return kyberEncapsulate(pub, keyType)
@@ -42,9 +39,7 @@ func Encapsulate(pub []byte, keyType KeyType) (ct []byte, ss []byte, err error) 
 
 func Dencapsulate(pub []byte, pvt []byte, ct []byte, keyType KeyType) (ss []byte, err error) {
 	keyName := KeyTypeAsString[keyType]
-	if keyName[:4] == "SIKE" {
-		return sikeDencapsulate(pub, pvt, ct, keyType)
-	} else if keyName[:5] == "FRODO" {
+	if keyName[:5] == "FRODO" {
 		return frodoDencapsulate(pvt, ct, keyType)
 	} else if keyName[:5] == "KYBER" {
 		return kyberDencapsulate(pvt, ct, keyType)

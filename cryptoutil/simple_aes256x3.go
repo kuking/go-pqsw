@@ -17,7 +17,7 @@ type SCryptParameters struct {
 
 var CurrentSCryptParameters = SCryptParameters{
 	N: 65536 * 2,
-	R: 8,
+	R: 9,
 	P: 1,
 }
 
