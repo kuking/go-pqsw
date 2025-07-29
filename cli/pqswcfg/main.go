@@ -65,7 +65,7 @@ func doCmdConfig() {
 		}
 		if len(args) == 4 && args[2] == "vanilla" {
 			filename := args[3]
-			potpSize := 1024
+			potpSize := 2048
 			keyType := cryptoutil.KeyTypeKyber1024
 			cfg := config.NewEmpty()
 			key, err := cfg.CreateAndAddKey(keyType, strconv.FormatInt(cfg.NextSequentialKeyCN(), 10))
@@ -399,7 +399,7 @@ The commands are:
 
          create    creates a new potp of size in bytes provided
          delete    deletes a potp
-		 export    exports a potp
+         export    exports a potp
          import    imports a potp
          list      lists all potps`)
 }

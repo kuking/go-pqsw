@@ -5,7 +5,6 @@ import (
 	"encoding/gob"
 	"github.com/kuking/go-pqsw/cryptoutil"
 	"io"
-	"io/ioutil"
 	"os"
 	"testing"
 )
@@ -21,7 +20,7 @@ func TestNewEmpty(t *testing.T) {
 }
 
 func TestLoadSaveRoundTrip(t *testing.T) {
-	tmpFile, err := ioutil.TempFile("", "config")
+	tmpFile, err := os.CreateTemp("", "config")
 	if err != nil {
 		t.Fatal(err)
 	}

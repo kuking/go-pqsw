@@ -15,6 +15,9 @@ func GetPassword() (password string, err error) {
 		return
 	}
 	password, err = reader.ReadString('\n')
+	if password[len(password)-1] == '\n' {
+		password = password[:len(password)-1]
+	}
 	fmt.Println()
 	err = SetTermEcho(true)
 	return

@@ -9,6 +9,7 @@ import (
 	"github.com/pkg/errors"
 	"io/ioutil"
 	"math/big"
+	"os"
 	"strconv"
 )
 
@@ -212,8 +213,7 @@ func (c *Config) SaveTo(file string) (err error) {
 			return
 		}
 	}
-	err = ioutil.WriteFile(file, b, 0o600)
-	return
+	return os.WriteFile(file, b, 0o600)
 }
 
 func (c *Config) SetDiskEncryptionPassword(password string) {
