@@ -39,4 +39,4 @@ your feedback is welcomed. Absolutely no warranty of any kind, form or type is g
 - 2025/July/28: 
   - Removed Sike (not secure anymore)
   - Replaced Circl library for `crypto/mlkem`
-  - Incremented scrypt difficulty to current CPUs power
+  - Incremented scrypt difficulty to current CPUs power and client challenge
