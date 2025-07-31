@@ -1,7 +1,8 @@
 package wire
 
 import (
-	"github.com/google/logger"
+	log "github.com/sirupsen/logrus"
+
 	"net"
 )
 
@@ -9,10 +10,10 @@ func terminateHandshakeOnError(conn net.Conn, err error, explanation string) boo
 	if err == nil {
 		return false
 	}
-	logger.Infof("remote: '%v' terminated with error: '%v', while: '%v'", conn.RemoteAddr(), err, explanation)
+	log.Warnf("remote: '%v' terminated with error: '%v', while: '%v'", conn.RemoteAddr(), err, explanation)
 	err2 := conn.Close()
 	if err2 != nil {
-		logger.Infof("could not close connection %v", conn)
+		log.Warnf("could not close connection %v", conn)
 	}
 	return true
 }

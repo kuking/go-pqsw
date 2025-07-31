@@ -6,14 +6,13 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/google/logger"
 	"github.com/kuking/go-pqsw/config"
 	cu "github.com/kuking/go-pqsw/cryptoutil"
 	"github.com/kuking/go-pqsw/wire/msg"
 	"github.com/kuking/go-pqsw/wire/sha512lz"
+	log "github.com/sirupsen/logrus"
 	"io"
 	"net"
-	"os"
 	"testing"
 	"time"
 )
@@ -31,7 +30,6 @@ var sharedSecretRequest msg.SharedSecretRequest
 var sharedSecretBundleDescResponse msg.SharedSecretBundleDescriptionResponse
 
 func setup() {
-	logger.Init("test", true, false, os.Stdout)
 	srvCfg = config.NewEmpty()
 	srvCfg.PuzzleDifficulty = 10 // smaller value increases false positives in 'random/noise answer to the puzzle' tests
 	cliCfg = config.NewEmpty()
@@ -74,7 +72,6 @@ func TestServerConnect_DisconnectsAfterReceive(t *testing.T) {
 }
 
 func TestServerConnect_ServerUsesDifficultyFromConfig(t *testing.T) {
-	logger.Init("test", true, false, os.Stdout)
 	srvCfg = config.NewEmpty()
 	srvCfg.PuzzleDifficulty = 12345
 	cPipe, sPipe = net.Pipe()
@@ -695,7 +692,7 @@ func sendNoise(conn net.Conn, minimumAmount int) int {
 		count += len(bunch)
 	}
 	if err != nil {
-		logger.Infof("SendNoise finished due to %v", err)
+		log.Warnf("SendNoise finished due to %v", err)
 	}
 	return count
 }

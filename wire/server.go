@@ -4,13 +4,12 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"github.com/google/logger"
 	"github.com/kuking/go-pqsw/config"
 	"github.com/kuking/go-pqsw/cryptoutil"
 	"github.com/kuking/go-pqsw/wire/msg"
 	"github.com/kuking/go-pqsw/wire/sha512lz"
 	"github.com/pkg/errors"
-	"log"
+	log "github.com/sirupsen/logrus"
 	"net"
 )
 
@@ -30,7 +29,7 @@ func Listen(hostPort string, cfg *config.Config, handler func(wire *SecureWire))
 	for {
 		conn, err := l.Accept()
 		if err != nil {
-			logger.Infof("Could not accept connection: %v", err)
+			log.Warnf("Could not accept connection: %v", err)
 		} else {
 			go serverHandleNewConnection(conn, cfg, handler)
 		}
@@ -325,7 +324,7 @@ func terminateHandshakeOnServerError(conn net.Conn, serr *ServerError, explanati
 		return false
 	}
 	if serr.disconnectCause != msg.DisconnectCauseNone {
-		logger.Infof("remote: '%v' disconnecting with verbose cause: %v (%v)",
+		log.Errorf("remote: '%v' disconnecting with verbose cause: %v (%v)",
 			conn.RemoteAddr(), msg.DisconnectCauseString[serr.disconnectCause], serr.disconnectCause)
 		cause := msg.DisconnectCause{
 			Delimiter: msg.DisconnectCauseDelimiter,
@@ -333,7 +332,7 @@ func terminateHandshakeOnServerError(conn net.Conn, serr *ServerError, explanati
 		}
 		err := binary.Write(conn, binary.LittleEndian, cause)
 		if err != nil {
-			logger.Infof("remote '%v' could not send last disconnect message due to: %v", conn.RemoteAddr(), err)
+			log.Errorf("remote '%v' could not send last disconnect message due to: %v", conn.RemoteAddr(), err)
 		}
 	}
 	return terminateHandshakeOnError(conn, serr.err, explanation)
