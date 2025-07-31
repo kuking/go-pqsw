@@ -43,6 +43,7 @@ type Config struct {
 	PuzzleDifficulty int
 	TripleAES256     TripleAES256Config
 	passwordInDisk   string
+	Extra            map[string]interface{}
 }
 
 func (k *Key) IdAs32Byte() [32]byte {
@@ -312,5 +313,6 @@ func NewEmpty() *Config {
 		PreferredPotpCN:  "",
 		PuzzleDifficulty: 19, // as 2025, above 250ms on i7-1360P
 		TripleAES256:     TripleAES256Allowed,
+		Extra:            map[string]interface{}{},
 	}
 }
