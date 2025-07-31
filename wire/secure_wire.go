@@ -72,6 +72,7 @@ func (s *SecureWire) nonceForSequence(seq uint32) (nonce []byte) {
 	return nonce
 }
 
+// Read function will not work with partial reads, used in conjunction with SetReadDeadLine
 func (s *SecureWire) Read(b []byte) (n int, err error) {
 	s.recvSeqNo++
 	var payloadSize PayLoadSize
